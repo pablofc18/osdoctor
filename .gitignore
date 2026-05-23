@@ -1,0 +1,12 @@
+# Build artifacts
+/build/
+/osdoctor
+*.o
+*.a
+
+# Editor / OS cruft
+*.swp
+*~
+.DS_Store
+compile_commands.json
+.cache/
