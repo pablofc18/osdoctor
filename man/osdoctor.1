@@ -1,0 +1,125 @@
+.TH OSDOCTOR 1 "2026-05-30" "osdoctor 0.1.0" "User Commands"
+.SH NAME
+osdoctor \- Linux desktop health checks for Arch/Hyprland systems
+.SH SYNOPSIS
+.B osdoctor
+.RI [ command ]
+.RI [ options ]
+.SH DESCRIPTION
+.B osdoctor
+runs a set of read-only health checks against the host system, the
+package manager, the systemd service state, and the desktop session, then
+prints a grouped report. It is aimed at Arch Linux systems running Hyprland
+and Omarchy-style configurations, but the system, service, and package checks
+are useful on any systemd-based Arch install.
+.PP
+All checks are read-only: osdoctor never changes system state, and normal
+scans do not require root.
+.SH COMMANDS
+.TP
+.B scan
+Run every check group (System, Services, Packages, Desktop). This is the
+default action when no command is given.
+.TP
+.B system
+Run only the system checks (kernel, root disk space, /tmp, memory).
+.TP
+.B services
+Run only the service checks (failed system and user units).
+.TP
+.B packages
+Run only the package checks (pacman lock, log, orphans).
+.TP
+.B desktop
+Run only the desktop checks (Wayland session, Hyprland socket, Hyprland bind
+commands, Waybar scripts).
+.TP
+.B version
+Print the version and exit.
+.TP
+.B help
+Print usage information and exit.
+.SH OPTIONS
+.TP
+.B \-\-json
+Emit results as a JSON document instead of the human-readable report.
+.TP
+.B \-\-strict
+Treat warnings as failures for the purpose of the exit code. The displayed
+status labels are unchanged.
+.TP
+.B \-h ", " \-\-help
+Print usage information and exit.
+.TP
+.B \-V ", " \-\-version
+Print the version and exit.
+.SH "CHECK STATUS LEVELS"
+Each check reports one of:
+.B OK
+(healthy),
+.B WARN
+(worth attention),
+.B FAIL
+(a definite problem), or
+.B SKIP
+(not applicable in this environment).
+.SH "EXIT STATUS"
+.TP
+.B 0
+All checks passed (no warnings, no failures).
+.TP
+.B 1
+One or more warnings, but no failures.
+.TP
+.B 2
+One or more failures (or, under \fB\-\-strict\fR, one or more warnings).
+.TP
+.B 3
+Invalid usage or an internal/tooling error.
+.SH ENVIRONMENT
+.TP
+.B XDG_SESSION_TYPE
+Inspected by the Wayland session check.
+.TP
+.B HYPRLAND_INSTANCE_SIGNATURE ", " XDG_RUNTIME_DIR
+Used to locate the Hyprland IPC socket.
+.TP
+.B HOME
+Used to locate Hyprland and Waybar configuration files.
+.TP
+.B NO_COLOR
+If set, disables colorized output. Color is also disabled automatically when
+standard output is not a terminal.
+.SH FILES
+.TP
+.I ~/.config/hypr/hyprland.conf
+Parsed for \fBexec\fR bind commands.
+.TP
+.I ~/.config/waybar/config.jsonc ", " ~/.config/waybar/config
+Parsed for referenced local script paths.
+.TP
+.I /var/lib/pacman/db.lck
+Presence indicates a locked pacman database.
+.TP
+.I /var/log/pacman.log
+Checked for existence and readability.
+.SH EXAMPLES
+.TP
+Run all checks:
+.B osdoctor scan
+.TP
+Machine-readable output:
+.B osdoctor scan \-\-json
+.TP
+Only the desktop checks, failing on warnings:
+.B osdoctor desktop \-\-strict
+.SH AUTHOR
+Written by pablofc18.
+.SH "REPORTING BUGS"
+Report issues at <https://github.com/pablofc18/osdoctor/issues>.
+.SH "SEE ALSO"
+.BR systemctl (1),
+.BR systemd-analyze (1),
+.BR pacman (8),
+.BR journalctl (1),
+.BR hyprctl (1)
