@@ -93,7 +93,8 @@ standard output is not a terminal.
 .SH FILES
 .TP
 .I ~/.config/hypr/hyprland.conf
-Parsed for \fBexec\fR bind commands.
+Parsed for \fBexec\fR bind commands, including any files pulled in with
+\fBsource =\fR (resolved recursively).
 .TP
 .I ~/.config/waybar/config.jsonc ", " ~/.config/waybar/config
 Parsed for referenced local script paths.

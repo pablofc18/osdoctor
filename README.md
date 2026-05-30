@@ -76,7 +76,7 @@ Output is colorized when writing to a terminal, and plain when piped or when
 | Packages | `orphan-packages`         | `pacman -Qdtq` (SKIP without pacman)                                 |
 | Desktop  | `wayland-session`         | `XDG_SESSION_TYPE=wayland`                                            |
 | Desktop  | `hyprland-socket`         | Hyprland IPC socket exists (SKIP when not running Hyprland)          |
-| Desktop  | `hyprland-binds`          | `exec` bind targets in `hyprland.conf` resolve in `PATH`             |
+| Desktop  | `hyprland-binds`          | `exec` bind targets resolve in `PATH` (follows `source =` includes)  |
 | Desktop  | `waybar-scripts`          | Local scripts referenced by the Waybar config exist                  |
 
 ---
@@ -215,7 +215,6 @@ warning-clean.
 
 Planned work is tracked in the [issue tracker](https://github.com/pablofc18/osdoctor/issues):
 
-- [Follow `source=` includes when parsing `hyprland.conf`](https://github.com/pablofc18/osdoctor/issues/1) — Omarchy splits binds across files.
 - [Query systemd over D-Bus instead of parsing `systemctl`](https://github.com/pablofc18/osdoctor/issues/2)
 - [Use `libalpm` directly instead of shelling out to `pacman`](https://github.com/pablofc18/osdoctor/issues/3)
 - [Config file for thresholds and toggling checks](https://github.com/pablofc18/osdoctor/issues/4)
