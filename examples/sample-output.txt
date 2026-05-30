@@ -1,0 +1,25 @@
+System
+  ✓ Kernel detected: 7.0.9-arch2-1
+      Linux 7.0.9-arch2-1 #1 SMP PREEMPT_DYNAMIC Fri, 22 May 2026 19:25:09 +0000
+  ✓ Root filesystem has 403 GB free
+  ✓ /tmp is writable
+  ✓ Memory: 26811 MB available of 31956 MB
+
+Services
+  ✓ No failed system services
+  ✓ No failed user services
+
+Packages
+  ✓ pacman database is unlocked
+  ✓ pacman log exists
+  ✓ No orphan packages
+
+Desktop
+  ✓ Wayland session detected
+  ✓ Hyprland socket detected
+  ! Hyprland bind references missing command: ghostty
+  ✗ Waybar config references missing script: ~/.config/waybar/scripts/battery
+
+Summary
+  Status: FAIL
+  Checks: 11 ok, 1 warning, 1 failure

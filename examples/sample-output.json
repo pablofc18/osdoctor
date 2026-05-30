@@ -1,0 +1,97 @@
+{
+  "status": "fail",
+  "summary": {
+    "ok": 11,
+    "warn": 1,
+    "fail": 1,
+    "skip": 0
+  },
+  "groups": [
+    {
+      "name": "System",
+      "checks": [
+        {
+          "id": "kernel-version",
+          "status": "ok",
+          "message": "Kernel detected: 7.0.9-arch2-1",
+          "detail": "Linux 7.0.9-arch2-1 #1 SMP PREEMPT_DYNAMIC Fri, 22 May 2026 19:25:09 +0000"
+        },
+        {
+          "id": "root-disk-space",
+          "status": "ok",
+          "message": "Root filesystem has 403 GB free"
+        },
+        {
+          "id": "tmp-writable",
+          "status": "ok",
+          "message": "/tmp is writable"
+        },
+        {
+          "id": "memory-info",
+          "status": "ok",
+          "message": "Memory: 26792 MB available of 31956 MB"
+        }
+      ]
+    },
+    {
+      "name": "Services",
+      "checks": [
+        {
+          "id": "failed-system-services",
+          "status": "ok",
+          "message": "No failed system services"
+        },
+        {
+          "id": "failed-user-services",
+          "status": "ok",
+          "message": "No failed user services"
+        }
+      ]
+    },
+    {
+      "name": "Packages",
+      "checks": [
+        {
+          "id": "pacman-lock",
+          "status": "ok",
+          "message": "pacman database is unlocked"
+        },
+        {
+          "id": "pacman-log",
+          "status": "ok",
+          "message": "pacman log exists"
+        },
+        {
+          "id": "orphan-packages",
+          "status": "ok",
+          "message": "No orphan packages"
+        }
+      ]
+    },
+    {
+      "name": "Desktop",
+      "checks": [
+        {
+          "id": "wayland-session",
+          "status": "ok",
+          "message": "Wayland session detected"
+        },
+        {
+          "id": "hyprland-socket",
+          "status": "ok",
+          "message": "Hyprland socket detected"
+        },
+        {
+          "id": "hyprland-binds",
+          "status": "warn",
+          "message": "Hyprland bind references missing command: ghostty"
+        },
+        {
+          "id": "waybar-scripts",
+          "status": "fail",
+          "message": "Waybar config references missing script: ~/.config/waybar/scripts/battery"
+        }
+      ]
+    }
+  ]
+}
