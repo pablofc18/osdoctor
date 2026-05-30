@@ -213,15 +213,17 @@ warning-clean.
 
 ## Roadmap
 
-- Follow `source=` includes when parsing `hyprland.conf` (Omarchy splits binds
-  across files).
-- Talk to systemd over D-Bus instead of parsing `systemctl` output.
-- Direct `libalpm` integration instead of shelling out to `pacman`.
-- Config file for thresholds and enabling/disabling checks.
-- Plugin-style external checks.
-- TUI mode and an HTML report exporter.
-- Optional, opt-in fix suggestions (still read-only by default).
-- AUR package.
+Planned work is tracked in the [issue tracker](https://github.com/pablofc18/osdoctor/issues):
+
+- [Follow `source=` includes when parsing `hyprland.conf`](https://github.com/pablofc18/osdoctor/issues/1) — Omarchy splits binds across files.
+- [Query systemd over D-Bus instead of parsing `systemctl`](https://github.com/pablofc18/osdoctor/issues/2)
+- [Use `libalpm` directly instead of shelling out to `pacman`](https://github.com/pablofc18/osdoctor/issues/3)
+- [Config file for thresholds and toggling checks](https://github.com/pablofc18/osdoctor/issues/4)
+- [Plugin-style external checks](https://github.com/pablofc18/osdoctor/issues/5)
+- [TUI mode](https://github.com/pablofc18/osdoctor/issues/6)
+- [HTML report exporter](https://github.com/pablofc18/osdoctor/issues/7)
+- [Opt-in fix suggestions](https://github.com/pablofc18/osdoctor/issues/8) — still read-only by default.
+- [AUR package](https://github.com/pablofc18/osdoctor/issues/9)
 
 ---
 
