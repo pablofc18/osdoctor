@@ -6,11 +6,15 @@
  * a variable, or otherwise ambiguous input. The goal is "no false alarms"
  * rather than "perfect coverage".
  */
+#include "check_desktop_internal.h"
 #include "checks.h"
 #include "osdoctor.h"
 #include "util_fs.h"
 #include "util_string.h"
 
+#include <ctype.h>
+#include <glob.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,15 +23,7 @@ static const char *GROUP = "Desktop";
 
 #define CONFIG_MAX_BYTES (1u << 20) /* 1 MiB cap when reading config files */
 
-/* ---- tiny de-duplicating string set ---- */
-
-#define SET_CAP 64
-#define SET_ITEM 256
-
-typedef struct {
-    char items[SET_CAP][SET_ITEM];
-    size_t len;
-} strset_t;
+/* ---- tiny de-duplicating string set (type in check_desktop_internal.h) ---- */
 
 static bool set_add(strset_t *s, const char *value) {
     for (size_t i = 0; i < s->len; i++) {
@@ -116,10 +112,8 @@ static bool token_is_checkable(const char *tok) {
     return true;
 }
 
-/* True if the trimmed text before '=' is a Hyprland bind keyword
- * ("bind" optionally followed by flag letters: bind, binde, bindl, ...). */
-static bool is_bind_keyword(const char *line, const char *eq) {
-    char kw[32];
+/* Copy the trimmed text appearing before `eq` on a `key = value` line. */
+static void config_key(const char *line, const char *eq, char *out, size_t out_size) {
     size_t len = (size_t)(eq - line);
     char tmp[64];
     if (len >= sizeof tmp) {
@@ -127,8 +121,16 @@ static bool is_bind_keyword(const char *line, const char *eq) {
     }
     memcpy(tmp, line, len);
     tmp[len] = '\0';
-    char *trimmed = str_trim(tmp);
-    snprintf(kw, sizeof kw, "%s", trimmed);
+    snprintf(out, out_size, "%s", str_trim(tmp));
+}
+
+/* True if the trimmed text before '=' is a Hyprland bind keyword ("bind"
+ * optionally followed by flag letters: bind, binde, bindl, bindd, ...). When
+ * non-NULL, `*has_desc` is set true if the flags include 'd' (description),
+ * which inserts an extra field before the dispatcher. */
+static bool is_bind_keyword(const char *line, const char *eq, bool *has_desc) {
+    char kw[32];
+    config_key(line, eq, kw, sizeof kw);
     if (!str_starts_with(kw, "bind")) {
         return false;
     }
@@ -137,7 +139,257 @@ static bool is_bind_keyword(const char *line, const char *eq) {
             return false;
         }
     }
+    if (has_desc != NULL) {
+        *has_desc = strchr(kw + 4, 'd') != NULL; /* flags follow "bind" */
+    }
     return true;
+}
+
+/* Pointer to the start of comma-field `n` (0-based) within `s`, or NULL if
+ * there are fewer than n+1 fields. */
+static const char *nth_field(const char *s, int n) {
+    const char *p = s;
+    for (int i = 0; i < n; i++) {
+        p = strchr(p, ',');
+        if (p == NULL) {
+            return NULL;
+        }
+        p++;
+    }
+    return p;
+}
+
+/* If `line` is a `source = <path>` directive, copy the trimmed, unquoted value
+ * into `out` and return true. Otherwise return false. */
+static bool parse_source_value(const char *line, char *out, size_t out_size) {
+    if (!str_starts_with(line, "source")) {
+        return false;
+    }
+    const char *eq = strchr(line, '=');
+    if (eq == NULL) {
+        return false;
+    }
+    char kw[32];
+    config_key(line, eq, kw, sizeof kw);
+    if (strcmp(kw, "source") != 0) {
+        return false;
+    }
+    char tmp[PATH_MAX];
+    snprintf(tmp, sizeof tmp, "%s", eq + 1);
+    char *value = str_trim(tmp);
+    strip_quotes(value);
+    snprintf(out, out_size, "%s", value);
+    return true;
+}
+
+/* Expand $VAR and ${VAR} from the environment into `out`. Undefined variables
+ * expand to empty; a lone '$' is copied literally. Always NUL-terminates. */
+static void expand_env_vars(const char *in, char *out, size_t out_size) {
+    size_t o = 0;
+    for (const char *p = in; *p != '\0' && o + 1 < out_size;) {
+        if (*p != '$') {
+            out[o++] = *p++;
+            continue;
+        }
+        p++; /* consume '$' */
+        bool braced = (*p == '{');
+        if (braced) {
+            p++;
+        }
+        char name[128];
+        size_t n = 0;
+        while (*p != '\0' && n + 1 < sizeof name && (isalnum((unsigned char)*p) || *p == '_')) {
+            name[n++] = *p++;
+        }
+        name[n] = '\0';
+        if (braced && *p == '}') {
+            p++;
+        }
+        if (n == 0) {
+            out[o++] = '$'; /* not a variable reference */
+            continue;
+        }
+        const char *val = getenv(name);
+        if (val != NULL) {
+            while (*val != '\0' && o + 1 < out_size) {
+                out[o++] = *val++;
+            }
+        }
+    }
+    out[o] = '\0';
+}
+
+/* Parse a single (already-trimmed) bind line, updating `missing`/`checked`.
+ * Only exec/execr binds with a checkable command token are considered. */
+static void process_bind_line(const char *line, strset_t *missing, int *checked) {
+    if (!str_starts_with(line, "bind")) {
+        return;
+    }
+    const char *eq = strchr(line, '=');
+    bool has_desc = false;
+    if (eq == NULL || !is_bind_keyword(line, eq, &has_desc)) {
+        return;
+    }
+    /* RHS fields: mods, key, [description,] dispatcher, args...  The command
+     * lives in `args` only when the dispatcher is exec/execr. The optional
+     * description field is present when the bind flags include 'd'. */
+    const char *disp = nth_field(eq + 1, has_desc ? 3 : 2);
+    if (disp == NULL) {
+        return;
+    }
+    const char *disp_end = strchr(disp, ',');
+    if (disp_end == NULL) {
+        return; /* dispatcher with no argument */
+    }
+
+    char dispatcher[64];
+    char tmp[128];
+    size_t dl = (size_t)(disp_end - disp);
+    if (dl >= sizeof tmp) {
+        dl = sizeof tmp - 1;
+    }
+    memcpy(tmp, disp, dl);
+    tmp[dl] = '\0';
+    snprintf(dispatcher, sizeof dispatcher, "%s", str_trim(tmp));
+    if (strcmp(dispatcher, "exec") != 0 && strcmp(dispatcher, "execr") != 0) {
+        return;
+    }
+
+    char tok[SET_ITEM];
+    first_token(disp_end + 1, tok, sizeof tok);
+    strip_quotes(tok);
+    if (!token_is_checkable(tok)) {
+        return;
+    }
+    (*checked)++;
+    char *expanded = expand_home_path(tok);
+    bool ok = (expanded != NULL) && is_executable_in_path(expanded);
+    free(expanded);
+    if (!ok) {
+        set_add(missing, tok);
+    }
+}
+
+/* ---- include graph traversal ---- */
+
+#define VISITED_CAP 256
+
+/* Set of canonicalized (realpath) config files already scanned, used to break
+ * `source =` cycles. */
+typedef struct {
+    char *items[VISITED_CAP];
+    size_t len;
+} pathset_t;
+
+/* Add `path` if new. Returns true if it was added, false if already present or
+ * at capacity (either way the caller should not re-scan it). */
+static bool visited_add(pathset_t *v, const char *path) {
+    for (size_t i = 0; i < v->len; i++) {
+        if (strcmp(v->items[i], path) == 0) {
+            return false;
+        }
+    }
+    if (v->len >= VISITED_CAP) {
+        return false;
+    }
+    char *copy = strdup(path);
+    if (copy == NULL) {
+        return false;
+    }
+    v->items[v->len++] = copy;
+    return true;
+}
+
+static void visited_free(pathset_t *v) {
+    for (size_t i = 0; i < v->len; i++) {
+        free(v->items[i]);
+    }
+    v->len = 0;
+}
+
+static void scan_config_file(const char *path, hypr_bind_scan_t *out, pathset_t *visited,
+                             int depth);
+
+/* Resolve a `source =` value (env vars, ~, relative-to-`base_dir`), expand any
+ * glob, and recurse into each match. */
+static void scan_source(const char *value, const char *base_dir, hypr_bind_scan_t *out,
+                        pathset_t *visited, int depth) {
+    char expanded[PATH_MAX];
+    expand_env_vars(value, expanded, sizeof expanded);
+
+    char pattern[PATH_MAX];
+    if (expanded[0] == '~') {
+        char *home = expand_home_path(expanded);
+        if (home == NULL) {
+            return;
+        }
+        snprintf(pattern, sizeof pattern, "%s", home);
+        free(home);
+    } else if (expanded[0] == '/') {
+        snprintf(pattern, sizeof pattern, "%s", expanded);
+    } else if (join_path(base_dir, expanded, pattern, sizeof pattern) != 0) {
+        return; /* resolved include path too long */
+    }
+
+    glob_t g = {0};
+    if (glob(pattern, 0, NULL, &g) == 0) {
+        for (size_t i = 0; i < g.gl_pathc; i++) {
+            scan_config_file(g.gl_pathv[i], out, visited, depth + 1);
+        }
+    }
+    globfree(&g);
+}
+
+/* Scan `path` and every file it transitively `source =`s for exec binds. */
+static void scan_config_file(const char *path, hypr_bind_scan_t *out, pathset_t *visited,
+                             int depth) {
+    if (depth > MAX_INCLUDE_DEPTH) {
+        return;
+    }
+    char canon[PATH_MAX];
+    if (realpath(path, canon) == NULL) {
+        return; /* missing / unreadable include - skip silently */
+    }
+    if (!visited_add(visited, canon)) {
+        return; /* cycle or capacity - skip */
+    }
+    char *content = fs_read_file(canon, CONFIG_MAX_BYTES, NULL);
+    if (content == NULL) {
+        return;
+    }
+
+    /* Directory of this file, for resolving relative includes. */
+    char base_dir[PATH_MAX];
+    snprintf(base_dir, sizeof base_dir, "%s", canon);
+    char *slash = strrchr(base_dir, '/');
+    if (slash != NULL) {
+        *slash = '\0';
+    } else {
+        snprintf(base_dir, sizeof base_dir, ".");
+    }
+
+    size_t nlines = 0;
+    char **lines = str_split_lines(content, &nlines);
+    for (size_t i = 0; i < nlines; i++) {
+        char *line = str_trim(lines[i]);
+        if (*line == '#' || *line == '\0') {
+            continue;
+        }
+        char value[PATH_MAX];
+        if (parse_source_value(line, value, sizeof value)) {
+            scan_source(value, base_dir, out, visited, depth);
+            continue;
+        }
+        process_bind_line(line, &out->missing, &out->checked);
+    }
+    str_free_lines(lines, nlines);
+    free(content);
+}
+
+void hypr_scan_binds(const char *root_path, hypr_bind_scan_t *out) {
+    pathset_t visited = {0};
+    scan_config_file(root_path, out, &visited, 0);
+    visited_free(&visited);
 }
 
 static int check_hyprland_binds(check_result_list_t *r) {
@@ -150,79 +402,21 @@ static int check_hyprland_binds(check_result_list_t *r) {
         return results_add(r, "hyprland-binds", GROUP, CHECK_SKIP, "Hyprland config not found",
                            "~/.config/hypr/hyprland.conf");
     }
-    char *content = fs_read_file(cfg, CONFIG_MAX_BYTES, NULL);
+
+    /* Walk hyprland.conf and every file it `source =`s. */
+    hypr_bind_scan_t scan = {0};
+    hypr_scan_binds(cfg, &scan);
     free(cfg);
-    if (content == NULL) {
-        return results_add(r, "hyprland-binds", GROUP, CHECK_SKIP, "Could not read Hyprland config",
-                           "");
-    }
 
-    strset_t missing = {0};
-    int checked = 0;
-    size_t nlines = 0;
-    char **lines = str_split_lines(content, &nlines);
-    for (size_t i = 0; i < nlines; i++) {
-        char *line = str_trim(lines[i]);
-        if (*line == '#' || !str_starts_with(line, "bind")) {
-            continue;
-        }
-        char *eq = strchr(line, '=');
-        if (eq == NULL || !is_bind_keyword(line, eq)) {
-            continue;
-        }
-        /* RHS fields: mods, key, dispatcher, args...  The command lives in
-         * `args` only when the dispatcher is exec/execr. */
-        char *c1 = strchr(eq + 1, ',');
-        if (c1 == NULL) {
-            continue;
-        }
-        char *c2 = strchr(c1 + 1, ',');
-        if (c2 == NULL) {
-            continue;
-        }
-        char *c3 = strchr(c2 + 1, ',');
-
-        char dispatcher[64];
-        char tmp[128];
-        size_t dl = (c3 != NULL) ? (size_t)(c3 - (c2 + 1)) : strlen(c2 + 1);
-        if (dl >= sizeof tmp) {
-            dl = sizeof tmp - 1;
-        }
-        memcpy(tmp, c2 + 1, dl);
-        tmp[dl] = '\0';
-        snprintf(dispatcher, sizeof dispatcher, "%s", str_trim(tmp));
-        if (strcmp(dispatcher, "exec") != 0 && strcmp(dispatcher, "execr") != 0) {
-            continue;
-        }
-        if (c3 == NULL) {
-            continue; /* exec with no argument */
-        }
-
-        char tok[SET_ITEM];
-        first_token(c3 + 1, tok, sizeof tok);
-        strip_quotes(tok);
-        if (!token_is_checkable(tok)) {
-            continue;
-        }
-        checked++;
-        char *expanded = expand_home_path(tok);
-        bool ok = (expanded != NULL) && is_executable_in_path(expanded);
-        free(expanded);
-        if (!ok) {
-            set_add(&missing, tok);
-        }
-    }
-    str_free_lines(lines, nlines);
-    free(content);
-
-    if (missing.len == 0) {
+    if (scan.missing.len == 0) {
         char msg[OSDOCTOR_MSG_CAP];
-        snprintf(msg, sizeof msg, "Hyprland bind commands resolved (%d checked)", checked);
+        snprintf(msg, sizeof msg, "Hyprland bind commands resolved (%d checked)", scan.checked);
         return results_add(r, "hyprland-binds", GROUP, CHECK_OK, msg, "");
     }
-    for (size_t i = 0; i < missing.len; i++) {
+    for (size_t i = 0; i < scan.missing.len; i++) {
         char msg[OSDOCTOR_MSG_CAP];
-        snprintf(msg, sizeof msg, "Hyprland bind references missing command: %s", missing.items[i]);
+        snprintf(msg, sizeof msg, "Hyprland bind references missing command: %s",
+                 scan.missing.items[i]);
         if (results_add(r, "hyprland-binds", GROUP, CHECK_WARN, msg, "") != 0) {
             return -1;
         }
