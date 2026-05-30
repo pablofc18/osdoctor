@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v6
+
+      # Use c2x rather than c23 so the build works on the toolchains shipped by
+      # ubuntu-latest. Locally on Arch, the default `make` uses -std=c23.
+      - name: Build (${{ matrix.cc }})
+        run: make CC=${{ matrix.cc }} CSTD=c2x
+
+      - name: Test (${{ matrix.cc }})
+        run: make test CC=${{ matrix.cc }} CSTD=c2x
+
+      - name: Smoke test
+        run: |
+          ./osdoctor version
+          ./osdoctor help
+          # `scan` may exit non-zero on the runner (e.g. no Wayland session);
+          # we only assert that it runs and that --json stays valid.
+          ./osdoctor scan || true
+          ./osdoctor scan --json | python3 -m json.tool > /dev/null
