@@ -43,6 +43,17 @@ LIB_SRCS = \
 	$(SRC_DIR)/check_packages.c \
 	$(SRC_DIR)/check_desktop.c
 
+# Optional sd-bus backend for the Services checks. `make USE_LIBSYSTEMD=1`
+# queries systemd over D-Bus via libsystemd instead of parsing systemctl, and
+# falls back to systemctl at runtime on a hard bus error. The default build
+# stays dependency-free.
+USE_LIBSYSTEMD ?= 0
+ifeq ($(USE_LIBSYSTEMD),1)
+  override CPPFLAGS += -DOSDOCTOR_HAVE_LIBSYSTEMD $(shell pkg-config --cflags libsystemd 2>/dev/null)
+  override LDLIBS   += $(shell pkg-config --libs libsystemd 2>/dev/null || echo -lsystemd)
+  LIB_SRCS += $(SRC_DIR)/check_services_sdbus.c
+endif
+
 ALL_SRCS = $(SRC_DIR)/main.c $(LIB_SRCS)
 OBJS     = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(ALL_SRCS))
 LIB_OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(LIB_SRCS))
