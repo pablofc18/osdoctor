@@ -59,7 +59,8 @@ Output is colorized when writing to a terminal, and plain when piped or when
   doesn't apply to your environment).
 - **Script-friendly:** stable exit codes and `--json` output.
 - **`--strict` mode** to treat warnings as failures in CI.
-- **Small and dependency-light:** standard C23 + POSIX, no external libraries.
+- **Small and dependency-light:** standard C23 + POSIX, no external libraries by
+  default (optionally libsystemd for the service checks — see [Build options](#build-options)).
 
 ### Checks
 
@@ -69,8 +70,8 @@ Output is colorized when writing to a terminal, and plain when piped or when
 | System   | `root-disk-space`         | Free space on `/` (WARN < 10 GB, FAIL < 2 GB)                         |
 | System   | `tmp-writable`            | `/tmp` is writable                                                   |
 | System   | `memory-info`             | `/proc/meminfo` (WARN when < 10% available)                          |
-| Services | `failed-system-services`  | `systemctl --failed`                                                 |
-| Services | `failed-user-services`    | `systemctl --user --failed` (SKIP without a user session)            |
+| Services | `failed-system-services`  | Failed system units — sd-bus or `systemctl --failed`                 |
+| Services | `failed-user-services`    | Failed user units — sd-bus or `systemctl --user --failed` (SKIP without a user session) |
 | Packages | `pacman-lock`             | `/var/lib/pacman/db.lck` present → FAIL                              |
 | Packages | `pacman-log`              | `/var/log/pacman.log` exists and is readable                         |
 | Packages | `orphan-packages`         | `pacman -Qdtq` (SKIP without pacman)                                 |
@@ -102,6 +103,21 @@ sudo make install PREFIX=/usr
 Uninstall with `sudo make uninstall` (respecting the same `PREFIX`).
 
 > Older toolchains: override the standard with `make CSTD=c2x`.
+
+### Build options
+
+By default the build pulls in no external libraries and the service checks shell
+out to `systemctl`. To query systemd directly over D-Bus instead (faster, with
+no subprocess or text parsing), build against libsystemd:
+
+```sh
+make USE_LIBSYSTEMD=1
+```
+
+This needs the libsystemd development files (`libsystemd-dev` on Debian/Ubuntu;
+provided by `systemd` on Arch). The sd-bus backend is tried first and falls back
+to `systemctl` at runtime if the system bus is unavailable, so a binary built
+this way still behaves sensibly on hosts without a reachable bus.
 
 ### Arch Linux (PKGBUILD)
 
@@ -192,10 +208,11 @@ A complete sample is in [`examples/sample-output.json`](examples/sample-output.j
 ## Development
 
 ```sh
-make            # build ./osdoctor
-make test       # build and run the unit tests
-make format     # run clang-format (if installed)
-make clean      # remove build artifacts
+make                   # build ./osdoctor
+make USE_LIBSYSTEMD=1  # build with the sd-bus service backend (needs libsystemd)
+make test              # build and run the unit tests
+make format            # run clang-format (if installed)
+make clean             # remove build artifacts
 ```
 
 The code is a small multi-file C project:
@@ -203,7 +220,7 @@ The code is a small multi-file C project:
 ```
 include/   public headers (one per module)
 src/       implementation: cli, checks, output, utils, and one file per check group
-tests/     framework-free unit tests for the string and filesystem helpers
+tests/     framework-free unit tests (string, filesystem, Hyprland config, service formatting)
 ```
 
 Built with `-Wall -Wextra -Wpedantic -std=c23` and intended to stay
@@ -215,7 +232,6 @@ warning-clean.
 
 Planned work is tracked in the [issue tracker](https://github.com/pablofc18/osdoctor/issues):
 
-- [Query systemd over D-Bus instead of parsing `systemctl`](https://github.com/pablofc18/osdoctor/issues/2)
 - [Use `libalpm` directly instead of shelling out to `pacman`](https://github.com/pablofc18/osdoctor/issues/3)
 - [Config file for thresholds and toggling checks](https://github.com/pablofc18/osdoctor/issues/4)
 - [Plugin-style external checks](https://github.com/pablofc18/osdoctor/issues/5)

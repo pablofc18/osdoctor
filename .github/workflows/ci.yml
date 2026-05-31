@@ -34,3 +34,34 @@ jobs:
           # we only assert that it runs and that --json stays valid.
           ./osdoctor scan || true
           ./osdoctor scan --json | python3 -m json.tool > /dev/null
+
+  # Exercise the optional sd-bus backend so the USE_LIBSYSTEMD=1 path stays
+  # building and passing alongside the default systemctl path.
+  build-sdbus:
+    name: Build with sd-bus backend
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install libsystemd
+        run: sudo apt-get update && sudo apt-get install -y libsystemd-dev pkg-config
+
+      - name: Build (${{ matrix.cc }}, USE_LIBSYSTEMD=1)
+        run: make CC=${{ matrix.cc }} CSTD=c2x USE_LIBSYSTEMD=1
+
+      - name: Assert the binary links libsystemd
+        run: ldd ./osdoctor | grep -q libsystemd
+
+      - name: Test (${{ matrix.cc }}, USE_LIBSYSTEMD=1)
+        run: make test CC=${{ matrix.cc }} CSTD=c2x USE_LIBSYSTEMD=1
+
+      - name: Smoke test
+        run: |
+          ./osdoctor version
+          ./osdoctor help
+          ./osdoctor scan || true
+          ./osdoctor scan --json | python3 -m json.tool > /dev/null

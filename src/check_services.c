@@ -45,7 +45,8 @@ void svc_detail_append(char *detail, size_t detail_size, size_t *used, const cha
  */
 int svc_emit(check_result_list_t *r, svc_scope_t scope, svc_query_status_t status, int count,
              const char *detail) {
-    const char *id = (scope == SVC_SCOPE_SYSTEM) ? "failed-system-services" : "failed-user-services";
+    const char *id =
+        (scope == SVC_SCOPE_SYSTEM) ? "failed-system-services" : "failed-user-services";
     const char *noun = (scope == SVC_SCOPE_SYSTEM) ? "system" : "user";
     char msg[OSDOCTOR_MSG_CAP];
 
