@@ -1,6 +1,13 @@
 /*
  * check_packages.c - pacman database lock, log, and orphan packages.
+ *
+ * The orphan-package lookup sits behind a small backend seam. pkg_query_pacman
+ * shells out to `pacman -Qdtq`; when built with USE_LIBALPM, pkg_query_alpm (in
+ * check_packages_alpm.c) reads the local pacman database directly and is tried
+ * first, falling back to pacman only on a hard error. pkg_emit turns either
+ * backend's result into the check output, so both share wording.
  */
+#include "check_packages_internal.h"
 #include "checks.h"
 #include "osdoctor.h"
 #include "util_exec.h"
@@ -10,6 +17,94 @@
 #include <stdio.h>
 
 static const char *GROUP = "Packages";
+
+/*
+ * Append a package name to a bounded, comma-separated sample in `detail`. The
+ * comma-join and truncation behaviour matches what the inline orphan loop
+ * produced before the backends were split out; the libalpm backend reuses it.
+ */
+void pkg_detail_append(char *detail, size_t detail_size, size_t *used, const char *name) {
+    if (detail == NULL || name == NULL || used == NULL || *used + 1 >= detail_size) {
+        return;
+    }
+    int w = snprintf(detail + *used, detail_size - *used, "%s%s", (*used > 0) ? ", " : "", name);
+    if (w > 0) {
+        *used += (size_t)w;
+        if (*used >= detail_size) {
+            *used = detail_size - 1;
+        }
+    }
+}
+
+/*
+ * Translate a backend query result into the orphan-packages check result. The
+ * id, group, status and message text match the documented output (see
+ * examples/sample-output.*), so the result is identical regardless of which
+ * backend produced the data.
+ */
+int pkg_emit(check_result_list_t *r, pkg_query_status_t status, int count, const char *detail) {
+    if (status == PKG_QUERY_UNAVAILABLE) {
+        return results_add(r, "orphan-packages", GROUP, CHECK_SKIP, "pacman not available", "");
+    }
+    if (count <= 0) {
+        return results_add(r, "orphan-packages", GROUP, CHECK_OK, "No orphan packages", "");
+    }
+    char msg[OSDOCTOR_MSG_CAP];
+    snprintf(msg, sizeof msg, "%d orphan package%s detected", count, (count == 1) ? "" : "s");
+    return results_add(r, "orphan-packages", GROUP, CHECK_WARN, msg, detail);
+}
+
+/*
+ * pacman backend: parse `pacman -Qdtq`. The command exits 1 when there are no
+ * orphans, so the result is judged by whether any output was produced rather
+ * than by the exit status. Returns PKG_QUERY_UNAVAILABLE when pacman is not in
+ * PATH (which pkg_emit turns into a SKIP).
+ */
+static pkg_query_status_t pkg_query_pacman(int *count, char *detail, size_t detail_size) {
+    *count = 0;
+    if (detail_size > 0) {
+        detail[0] = '\0';
+    }
+    if (!is_executable_in_path("pacman")) {
+        return PKG_QUERY_UNAVAILABLE;
+    }
+
+    char out[16384];
+    int status = 0;
+    run_capture("pacman -Qdtq 2>/dev/null", out, sizeof out, &status);
+
+    size_t nlines = 0;
+    char **lines = str_split_lines(out, &nlines);
+    int n = 0;
+    size_t used = 0;
+    for (size_t i = 0; i < nlines; i++) {
+        char *line = str_trim(lines[i]);
+        if (*line == '\0') {
+            continue;
+        }
+        n++;
+        pkg_detail_append(detail, detail_size, &used, line);
+    }
+    str_free_lines(lines, nlines);
+
+    *count = n;
+    return PKG_QUERY_OK;
+}
+
+/*
+ * Enumerate orphans, preferring libalpm when compiled in. An OK result is
+ * authoritative; only a hard error (UNAVAILABLE) falls back to the pacman
+ * backend.
+ */
+static pkg_query_status_t pkg_query_orphans(int *count, char *detail, size_t detail_size) {
+#ifdef OSDOCTOR_HAVE_LIBALPM
+    pkg_query_status_t st = pkg_query_alpm(count, detail, detail_size);
+    if (st != PKG_QUERY_UNAVAILABLE) {
+        return st;
+    }
+#endif
+    return pkg_query_pacman(count, detail, detail_size);
+}
 
 int run_package_checks(check_result_list_t *r) {
     /* 7. pacman database lock */
@@ -34,45 +129,9 @@ int run_package_checks(check_result_list_t *r) {
         return -1;
     }
 
-    /* 9. Orphan packages (pacman -Qdtq exits 1 when there are none, so we rely
-     * on whether any output was produced rather than the exit status). */
-    if (!is_executable_in_path("pacman")) {
-        return results_add(r, "orphan-packages", GROUP, CHECK_SKIP, "pacman not available", "");
-    }
-
-    char out[16384];
-    int status = 0;
-    run_capture("pacman -Qdtq 2>/dev/null", out, sizeof out, &status);
-
-    size_t nlines = 0;
-    char **lines = str_split_lines(out, &nlines);
-    int count = 0;
+    /* 9. Orphan packages */
     char detail[OSDOCTOR_DETAIL_CAP];
-    detail[0] = '\0';
-    size_t used = 0;
-    for (size_t i = 0; i < nlines; i++) {
-        char *line = str_trim(lines[i]);
-        if (*line == '\0') {
-            continue;
-        }
-        count++;
-        if (used + 1 < sizeof detail) {
-            int w =
-                snprintf(detail + used, sizeof detail - used, "%s%s", (used > 0) ? ", " : "", line);
-            if (w > 0) {
-                used += (size_t)w;
-                if (used >= sizeof detail) {
-                    used = sizeof detail - 1;
-                }
-            }
-        }
-    }
-    str_free_lines(lines, nlines);
-
-    if (count == 0) {
-        return results_add(r, "orphan-packages", GROUP, CHECK_OK, "No orphan packages", "");
-    }
-    char msg[OSDOCTOR_MSG_CAP];
-    snprintf(msg, sizeof msg, "%d orphan package%s detected", count, (count == 1) ? "" : "s");
-    return results_add(r, "orphan-packages", GROUP, CHECK_WARN, msg, detail);
+    int count = 0;
+    pkg_query_status_t st = pkg_query_orphans(&count, detail, sizeof detail);
+    return pkg_emit(r, st, count, detail);
 }

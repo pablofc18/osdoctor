@@ -58,7 +58,7 @@ ALL_SRCS = $(SRC_DIR)/main.c $(LIB_SRCS)
 OBJS     = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(ALL_SRCS))
 LIB_OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(LIB_SRCS))
 
-TESTS     = test_string test_fs test_hypr test_services
+TESTS     = test_string test_fs test_hypr test_services test_packages
 TEST_BINS = $(addprefix $(OBJ_DIR)/,$(TESTS))
 
 HEADERS = $(wildcard include/*.h)
@@ -99,6 +99,9 @@ $(OBJ_DIR)/test_hypr: $(TEST_DIR)/test_hypr.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR
 
 $(OBJ_DIR)/test_services: $(TEST_DIR)/test_services.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_services.c $(LIB_OBJS) $(LDFLAGS) $(LDLIBS)
+
+$(OBJ_DIR)/test_packages: $(TEST_DIR)/test_packages.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_packages.c $(LIB_OBJS) $(LDFLAGS) $(LDLIBS)
 
 # ---- install / uninstall ----
 
