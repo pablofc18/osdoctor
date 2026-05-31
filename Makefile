@@ -47,7 +47,7 @@ ALL_SRCS = $(SRC_DIR)/main.c $(LIB_SRCS)
 OBJS     = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(ALL_SRCS))
 LIB_OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(LIB_SRCS))
 
-TESTS     = test_string test_fs test_hypr
+TESTS     = test_string test_fs test_hypr test_services
 TEST_BINS = $(addprefix $(OBJ_DIR)/,$(TESTS))
 
 HEADERS = $(wildcard include/*.h)
@@ -58,7 +58,7 @@ HEADERS = $(wildcard include/*.h)
 all: $(BIN)
 
 $(BIN): $(OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(HEADERS) | $(OBJ_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
@@ -78,13 +78,16 @@ test: $(TEST_BINS)
 	echo "ALL TESTS PASSED"
 
 $(OBJ_DIR)/test_string: $(TEST_DIR)/test_string.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_string.c $(LIB_OBJS) $(LDFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_string.c $(LIB_OBJS) $(LDFLAGS) $(LDLIBS)
 
 $(OBJ_DIR)/test_fs: $(TEST_DIR)/test_fs.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_fs.c $(LIB_OBJS) $(LDFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_fs.c $(LIB_OBJS) $(LDFLAGS) $(LDLIBS)
 
 $(OBJ_DIR)/test_hypr: $(TEST_DIR)/test_hypr.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_hypr.c $(LIB_OBJS) $(LDFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_hypr.c $(LIB_OBJS) $(LDFLAGS) $(LDLIBS)
+
+$(OBJ_DIR)/test_services: $(TEST_DIR)/test_services.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_services.c $(LIB_OBJS) $(LDFLAGS) $(LDLIBS)
 
 # ---- install / uninstall ----
 
