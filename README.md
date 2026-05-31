@@ -119,6 +119,10 @@ provided by `systemd` on Arch). The sd-bus backend is tried first and falls back
 to `systemctl` at runtime if the system bus is unavailable, so a binary built
 this way still behaves sensibly on hosts without a reachable bus.
 
+To go back to the dependency-free build, run `make clean` before rebuilding —
+the flag isn't tracked as a build dependency, so a plain `make` would reuse the
+stale libsystemd objects.
+
 ### Arch Linux (PKGBUILD)
 
 A [`packaging/PKGBUILD`](packaging/PKGBUILD) is included. To build a package
