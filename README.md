@@ -74,7 +74,7 @@ Output is colorized when writing to a terminal, and plain when piped or when
 | Services | `failed-user-services`    | Failed user units — sd-bus or `systemctl --user --failed` (SKIP without a user session) |
 | Packages | `pacman-lock`             | `/var/lib/pacman/db.lck` present → FAIL                              |
 | Packages | `pacman-log`              | `/var/log/pacman.log` exists and is readable                         |
-| Packages | `orphan-packages`         | `pacman -Qdtq` (SKIP without pacman)                                 |
+| Packages | `orphan-packages`         | Orphans via libalpm or `pacman -Qdtq` (SKIP without pacman)          |
 | Desktop  | `wayland-session`         | `XDG_SESSION_TYPE=wayland`                                            |
 | Desktop  | `hyprland-socket`         | Hyprland IPC socket exists (SKIP when not running Hyprland)          |
 | Desktop  | `hyprland-binds`          | `exec` bind targets resolve in `PATH` (follows `source =` includes)  |
@@ -122,6 +122,19 @@ this way still behaves sensibly on hosts without a reachable bus.
 To go back to the dependency-free build, run `make clean` before rebuilding —
 the flag isn't tracked as a build dependency, so a plain `make` would reuse the
 stale libsystemd objects.
+
+For the orphan-package check, you can likewise read the local pacman database
+directly via libalpm instead of shelling out to `pacman -Qdtq`:
+
+```sh
+make USE_LIBALPM=1
+```
+
+This needs the libalpm development files (provided by `pacman` on Arch). The
+libalpm backend is tried first and falls back to `pacman -Qdtq` on a hard error.
+The two backend flags are independent and can be combined:
+`make USE_LIBSYSTEMD=1 USE_LIBALPM=1`. As with `USE_LIBSYSTEMD`, run `make clean`
+before switching the flag on or off.
 
 ### Arch Linux (PKGBUILD)
 
@@ -214,6 +227,7 @@ A complete sample is in [`examples/sample-output.json`](examples/sample-output.j
 ```sh
 make                   # build ./osdoctor
 make USE_LIBSYSTEMD=1  # build with the sd-bus service backend (needs libsystemd)
+make USE_LIBALPM=1     # build with the libalpm orphan backend (needs libalpm)
 make test              # build and run the unit tests
 make format            # run clang-format (if installed)
 make clean             # remove build artifacts
@@ -236,7 +250,7 @@ warning-clean.
 
 Planned work is tracked in the [issue tracker](https://github.com/pablofc18/osdoctor/issues):
 
-- [Use `libalpm` directly instead of shelling out to `pacman`](https://github.com/pablofc18/osdoctor/issues/3)
+- ~~[Use `libalpm` directly instead of shelling out to `pacman`](https://github.com/pablofc18/osdoctor/issues/3)~~ — done; built with `USE_LIBALPM=1`.
 - [Config file for thresholds and toggling checks](https://github.com/pablofc18/osdoctor/issues/4)
 - [Plugin-style external checks](https://github.com/pablofc18/osdoctor/issues/5)
 - [TUI mode](https://github.com/pablofc18/osdoctor/issues/6)

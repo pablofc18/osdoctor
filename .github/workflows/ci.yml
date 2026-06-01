@@ -65,3 +65,36 @@ jobs:
           ./osdoctor help
           ./osdoctor scan || true
           ./osdoctor scan --json | python3 -m json.tool > /dev/null
+
+  # Exercise the optional libalpm backend so the USE_LIBALPM=1 path stays
+  # building and passing. libalpm ships with pacman, so this runs in an Arch
+  # container rather than on the Ubuntu runner.
+  build-alpm:
+    name: Build with libalpm backend
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - name: Install toolchain
+        run: pacman -Syu --noconfirm git base-devel clang pkgconf python
+
+      - uses: actions/checkout@v6
+
+      - name: Build (${{ matrix.cc }}, USE_LIBALPM=1)
+        run: make CC=${{ matrix.cc }} USE_LIBALPM=1
+
+      - name: Assert the binary links libalpm
+        run: ldd ./osdoctor | grep -q libalpm
+
+      - name: Test (${{ matrix.cc }}, USE_LIBALPM=1)
+        run: make test CC=${{ matrix.cc }} USE_LIBALPM=1
+
+      - name: Smoke test
+        run: |
+          ./osdoctor version
+          ./osdoctor help
+          ./osdoctor scan || true
+          ./osdoctor scan --json | python3 -m json.tool > /dev/null

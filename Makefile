@@ -54,11 +54,22 @@ ifeq ($(USE_LIBSYSTEMD),1)
   LIB_SRCS += $(SRC_DIR)/check_services_sdbus.c
 endif
 
+# Optional libalpm backend for the orphan-package check. `make USE_LIBALPM=1`
+# reads the local pacman database directly via libalpm instead of shelling out
+# to `pacman -Qdtq`, and falls back to pacman at runtime on a hard error. The
+# default build stays dependency-free.
+USE_LIBALPM ?= 0
+ifeq ($(USE_LIBALPM),1)
+  override CPPFLAGS += -DOSDOCTOR_HAVE_LIBALPM $(shell pkg-config --cflags libalpm 2>/dev/null)
+  override LDLIBS   += $(shell pkg-config --libs libalpm 2>/dev/null || echo -lalpm)
+  LIB_SRCS += $(SRC_DIR)/check_packages_alpm.c
+endif
+
 ALL_SRCS = $(SRC_DIR)/main.c $(LIB_SRCS)
 OBJS     = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(ALL_SRCS))
 LIB_OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(LIB_SRCS))
 
-TESTS     = test_string test_fs test_hypr test_services
+TESTS     = test_string test_fs test_hypr test_services test_packages
 TEST_BINS = $(addprefix $(OBJ_DIR)/,$(TESTS))
 
 HEADERS = $(wildcard include/*.h)
@@ -99,6 +110,9 @@ $(OBJ_DIR)/test_hypr: $(TEST_DIR)/test_hypr.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR
 
 $(OBJ_DIR)/test_services: $(TEST_DIR)/test_services.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_services.c $(LIB_OBJS) $(LDFLAGS) $(LDLIBS)
+
+$(OBJ_DIR)/test_packages: $(TEST_DIR)/test_packages.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_packages.c $(LIB_OBJS) $(LDFLAGS) $(LDLIBS)
 
 # ---- install / uninstall ----
 
