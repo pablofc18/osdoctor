@@ -1,0 +1,22 @@
+[package]
+name = "osdoctor"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+license = "MIT"
+description = "Linux desktop health checks for Arch/Hyprland systems"
+repository = "https://github.com/pablofc18/osdoctor"
+
+[lib]
+name = "osdoctor"
+path = "src/lib.rs"
+
+[[bin]]
+name = "osdoctor"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = 2
