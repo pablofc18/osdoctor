@@ -2,6 +2,7 @@
 #![allow(clippy::uninlined_format_args)]
 
 pub mod model;
+pub mod output;
 pub mod util;
 
 // Serializes tests that mutate process environment variables (HOME, etc.).
