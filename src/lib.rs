@@ -2,6 +2,7 @@
 #![allow(clippy::uninlined_format_args)]
 
 pub mod model;
+pub mod checks;
 pub mod output;
 pub mod util;
 
