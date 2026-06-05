@@ -1,6 +1,7 @@
 pub mod system;
 pub mod services;
 pub mod packages;
+pub mod desktop;
 
 use crate::model::CheckResult;
 
