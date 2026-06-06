@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, rust-port ]
+  pull_request:
 
 # Least privilege: this workflow only reads the repo to build and test.
 permissions:
@@ -11,90 +12,29 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        cc: [gcc, clang]
     steps:
       - uses: actions/checkout@v6
 
-      # Use c2x rather than c23 so the build works on the toolchains shipped by
-      # ubuntu-latest. Locally on Arch, the default `make` uses -std=c23.
-      - name: Build (${{ matrix.cc }})
-        run: make CC=${{ matrix.cc }} CSTD=c2x
+      - name: Install Rust (stable)
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
 
-      - name: Test (${{ matrix.cc }})
-        run: make test CC=${{ matrix.cc }} CSTD=c2x
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Test
+        run: cargo test --locked
 
       - name: Smoke test
         run: |
-          ./osdoctor version
-          ./osdoctor help
+          ./target/release/osdoctor version
+          ./target/release/osdoctor help
           # `scan` may exit non-zero on the runner (e.g. no Wayland session);
           # we only assert that it runs and that --json stays valid.
-          ./osdoctor scan || true
-          ./osdoctor scan --json | python3 -m json.tool > /dev/null
-
-  # Exercise the optional sd-bus backend so the USE_LIBSYSTEMD=1 path stays
-  # building and passing alongside the default systemctl path.
-  build-sdbus:
-    name: Build with sd-bus backend
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        cc: [gcc, clang]
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install libsystemd
-        run: sudo apt-get update && sudo apt-get install -y libsystemd-dev pkg-config
-
-      - name: Build (${{ matrix.cc }}, USE_LIBSYSTEMD=1)
-        run: make CC=${{ matrix.cc }} CSTD=c2x USE_LIBSYSTEMD=1
-
-      - name: Assert the binary links libsystemd
-        run: ldd ./osdoctor | grep -q libsystemd
-
-      - name: Test (${{ matrix.cc }}, USE_LIBSYSTEMD=1)
-        run: make test CC=${{ matrix.cc }} CSTD=c2x USE_LIBSYSTEMD=1
-
-      - name: Smoke test
-        run: |
-          ./osdoctor version
-          ./osdoctor help
-          ./osdoctor scan || true
-          ./osdoctor scan --json | python3 -m json.tool > /dev/null
-
-  # Exercise the optional libalpm backend so the USE_LIBALPM=1 path stays
-  # building and passing. libalpm ships with pacman, so this runs in an Arch
-  # container rather than on the Ubuntu runner.
-  build-alpm:
-    name: Build with libalpm backend
-    runs-on: ubuntu-latest
-    container: archlinux:latest
-    strategy:
-      fail-fast: false
-      matrix:
-        cc: [gcc, clang]
-    steps:
-      - name: Install toolchain
-        run: pacman -Syu --noconfirm git base-devel clang pkgconf python
-
-      - uses: actions/checkout@v6
-
-      - name: Build (${{ matrix.cc }}, USE_LIBALPM=1)
-        run: make CC=${{ matrix.cc }} USE_LIBALPM=1
-
-      - name: Assert the binary links libalpm
-        run: ldd ./osdoctor | grep -q libalpm
-
-      - name: Test (${{ matrix.cc }}, USE_LIBALPM=1)
-        run: make test CC=${{ matrix.cc }} USE_LIBALPM=1
-
-      - name: Smoke test
-        run: |
-          ./osdoctor version
-          ./osdoctor help
-          ./osdoctor scan || true
-          ./osdoctor scan --json | python3 -m json.tool > /dev/null
+          ./target/release/osdoctor scan || true
+          ./target/release/osdoctor scan --json | python3 -m json.tool > /dev/null

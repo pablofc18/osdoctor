@@ -2,14 +2,14 @@
 
 **Linux desktop health checks for Arch/Hyprland systems.**
 
-`osdoctor` is a small, read-only command-line utility written in C that
+`osdoctor` is a small, read-only command-line utility written in Rust that
 diagnoses common problems on Arch Linux desktops — especially Hyprland and
 Omarchy-style setups. It inspects the system, the package manager, systemd
 services, and your desktop session, then prints a clean, grouped report (or
 JSON) with a meaningful exit code you can use in scripts.
 
 [![CI](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml/badge.svg)](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml)
-![C23](https://img.shields.io/badge/C-23-blue)
+![Rust](https://img.shields.io/badge/Rust-2021-orange)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
 ---
@@ -59,8 +59,8 @@ Output is colorized when writing to a terminal, and plain when piped or when
   doesn't apply to your environment).
 - **Script-friendly:** stable exit codes and `--json` output.
 - **`--strict` mode** to treat warnings as failures in CI.
-- **Small and dependency-light:** standard C23 + POSIX, no external libraries by
-  default (optionally libsystemd for the service checks — see [Build options](#build-options)).
+- **Small and dependency-light:** Rust std + POSIX, with `libc` the only crate
+  (used for `uname`, `statvfs`, `glob`, and `access`).
 
 ### Checks
 
@@ -86,55 +86,20 @@ Output is colorized when writing to a terminal, and plain when piped or when
 
 ### From source
 
-Requires a C23-capable compiler (**GCC ≥ 14** or **Clang ≥ 18**) and `make`.
+Requires a Rust toolchain (stable, **Rust ≥ 1.70**) with `cargo`.
 
 ```sh
-make
-sudo make install        # installs to /usr/local by default
+cargo build --release
+sudo install -Dm755 target/release/osdoctor /usr/local/bin/osdoctor
+sudo install -Dm644 man/osdoctor.1 /usr/local/share/man/man1/osdoctor.1
 ```
 
-Install elsewhere with `PREFIX`:
+### Backends
 
-```sh
-make
-sudo make install PREFIX=/usr
-```
-
-Uninstall with `sudo make uninstall` (respecting the same `PREFIX`).
-
-> Older toolchains: override the standard with `make CSTD=c2x`.
-
-### Build options
-
-By default the build pulls in no external libraries and the service checks shell
-out to `systemctl`. To query systemd directly over D-Bus instead (faster, with
-no subprocess or text parsing), build against libsystemd:
-
-```sh
-make USE_LIBSYSTEMD=1
-```
-
-This needs the libsystemd development files (`libsystemd-dev` on Debian/Ubuntu;
-provided by `systemd` on Arch). The sd-bus backend is tried first and falls back
-to `systemctl` at runtime if the system bus is unavailable, so a binary built
-this way still behaves sensibly on hosts without a reachable bus.
-
-To go back to the dependency-free build, run `make clean` before rebuilding —
-the flag isn't tracked as a build dependency, so a plain `make` would reuse the
-stale libsystemd objects.
-
-For the orphan-package check, you can likewise read the local pacman database
-directly via libalpm instead of shelling out to `pacman -Qdtq`:
-
-```sh
-make USE_LIBALPM=1
-```
-
-This needs the libalpm development files (provided by `pacman` on Arch). The
-libalpm backend is tried first and falls back to `pacman -Qdtq` on a hard error.
-The two backend flags are independent and can be combined:
-`make USE_LIBSYSTEMD=1 USE_LIBALPM=1`. As with `USE_LIBSYSTEMD`, run `make clean`
-before switching the flag on or off.
+The service and package checks shell out to `systemctl` and `pacman`. The
+optional direct-library backends (libsystemd/sd-bus and libalpm) the C build
+offered are not yet ported; behaviour on a normal Arch system is identical,
+since those were faster paths for the same data.
 
 ### Arch Linux (PKGBUILD)
 
@@ -225,24 +190,26 @@ A complete sample is in [`examples/sample-output.json`](examples/sample-output.j
 ## Development
 
 ```sh
-make                   # build ./osdoctor
-make USE_LIBSYSTEMD=1  # build with the sd-bus service backend (needs libsystemd)
-make USE_LIBALPM=1     # build with the libalpm orphan backend (needs libalpm)
-make test              # build and run the unit tests
-make format            # run clang-format (if installed)
-make clean             # remove build artifacts
+cargo build            # build (debug)
+cargo build --release  # optimized build
+cargo test             # run unit + integration tests
+cargo fmt              # format
+cargo clippy           # lint
 ```
 
-The code is a small multi-file C project:
+The code is a small multi-module Rust crate:
 
 ```
-include/   public headers (one per module)
-src/       implementation: cli, checks, output, utils, and one file per check group
-tests/     framework-free unit tests (string, filesystem, Hyprland config, service formatting)
+src/model.rs   core result/summary types
+src/cli.rs     argument parsing and dispatch
+src/output/    text and JSON renderers
+src/checks/    one module per check group (system, services, packages, desktop)
+src/util/      exec, fs, and string helpers
+tests/         integration tests (JSON golden + CLI)
 ```
 
-Built with `-Wall -Wextra -Wpedantic -std=c23` and intended to stay
-warning-clean.
+`libc` is the only dependency, used for the handful of syscalls std does not
+expose (`uname`, `statvfs`, `glob`, `access`).
 
 ---
 
@@ -250,7 +217,7 @@ warning-clean.
 
 Planned work is tracked in the [issue tracker](https://github.com/pablofc18/osdoctor/issues):
 
-- ~~[Use `libalpm` directly instead of shelling out to `pacman`](https://github.com/pablofc18/osdoctor/issues/3)~~ — done; built with `USE_LIBALPM=1`.
+- [Use `libalpm`/sd-bus direct backends](https://github.com/pablofc18/osdoctor/issues/3) — available in the C build on `main`; not yet ported to Rust.
 - [Config file for thresholds and toggling checks](https://github.com/pablofc18/osdoctor/issues/4)
 - [Plugin-style external checks](https://github.com/pablofc18/osdoctor/issues/5)
 - [TUI mode](https://github.com/pablofc18/osdoctor/issues/6)

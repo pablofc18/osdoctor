@@ -1,13 +1,7 @@
 # Build artifacts
-/build/
-/osdoctor
-*.o
-*.a
+/target
 
 # Editor / OS cruft
 *.swp
 *~
 .DS_Store
-compile_commands.json
-.cache/
-/target
