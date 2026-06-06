@@ -24,11 +24,23 @@ pub struct Query {
 
 pub fn emit(results: &mut Vec<CheckResult>, q: &Query) {
     if q.status == QueryStatus::Unavailable {
-        results.push(CheckResult::new("orphan-packages", GROUP, CheckStatus::Skip, "pacman not available", ""));
+        results.push(CheckResult::new(
+            "orphan-packages",
+            GROUP,
+            CheckStatus::Skip,
+            "pacman not available",
+            "",
+        ));
         return;
     }
     if q.count <= 0 {
-        results.push(CheckResult::new("orphan-packages", GROUP, CheckStatus::Ok, "No orphan packages", ""));
+        results.push(CheckResult::new(
+            "orphan-packages",
+            GROUP,
+            CheckStatus::Ok,
+            "No orphan packages",
+            "",
+        ));
         return;
     }
     let plural = if q.count == 1 { "" } else { "s" };
@@ -43,7 +55,11 @@ pub fn emit(results: &mut Vec<CheckResult>, q: &Query) {
 
 fn query_pacman() -> Query {
     if !is_executable_in_path("pacman") {
-        return Query { status: QueryStatus::Unavailable, count: 0, detail: String::new() };
+        return Query {
+            status: QueryStatus::Unavailable,
+            count: 0,
+            detail: String::new(),
+        };
     }
     let (out, _code) = run_capture("pacman", &["-Qdtq"]);
     let mut detail = Detail::new(DETAIL_CAP);
@@ -56,7 +72,11 @@ fn query_pacman() -> Query {
         n += 1;
         detail.append(line);
     }
-    Query { status: QueryStatus::Ok, count: n, detail: detail.into_string() }
+    Query {
+        status: QueryStatus::Ok,
+        count: n,
+        detail: detail.into_string(),
+    }
 }
 
 pub fn run(results: &mut Vec<CheckResult>) {
@@ -69,11 +89,23 @@ pub fn run(results: &mut Vec<CheckResult>) {
             "Remove /var/lib/pacman/db.lck only if no pacman process is running.",
         ));
     } else {
-        results.push(CheckResult::new("pacman-lock", GROUP, CheckStatus::Ok, "pacman database is unlocked", ""));
+        results.push(CheckResult::new(
+            "pacman-lock",
+            GROUP,
+            CheckStatus::Ok,
+            "pacman database is unlocked",
+            "",
+        ));
     }
 
     if file_readable("/var/log/pacman.log") {
-        results.push(CheckResult::new("pacman-log", GROUP, CheckStatus::Ok, "pacman log exists", ""));
+        results.push(CheckResult::new(
+            "pacman-log",
+            GROUP,
+            CheckStatus::Ok,
+            "pacman log exists",
+            "",
+        ));
     } else {
         results.push(CheckResult::new(
             "pacman-log",
@@ -98,7 +130,14 @@ mod tests {
     #[test]
     fn emit_ok_zero() {
         let mut r = Vec::new();
-        emit(&mut r, &Query { status: QueryStatus::Ok, count: 0, detail: String::new() });
+        emit(
+            &mut r,
+            &Query {
+                status: QueryStatus::Ok,
+                count: 0,
+                detail: String::new(),
+            },
+        );
         assert_eq!(last(&r).status, CheckStatus::Ok);
         assert_eq!(last(&r).id, "orphan-packages");
         assert_eq!(last(&r).group, "Packages");
@@ -108,19 +147,40 @@ mod tests {
     #[test]
     fn emit_counts_and_plural() {
         let mut r = Vec::new();
-        emit(&mut r, &Query { status: QueryStatus::Ok, count: 3, detail: "a, b, c".into() });
+        emit(
+            &mut r,
+            &Query {
+                status: QueryStatus::Ok,
+                count: 3,
+                detail: "a, b, c".into(),
+            },
+        );
         assert_eq!(last(&r).status, CheckStatus::Warn);
         assert_eq!(last(&r).message, "3 orphan packages detected");
         assert_eq!(last(&r).detail, "a, b, c");
 
-        emit(&mut r, &Query { status: QueryStatus::Ok, count: 1, detail: "only".into() });
+        emit(
+            &mut r,
+            &Query {
+                status: QueryStatus::Ok,
+                count: 1,
+                detail: "only".into(),
+            },
+        );
         assert_eq!(last(&r).message, "1 orphan package detected");
     }
 
     #[test]
     fn emit_unavailable() {
         let mut r = Vec::new();
-        emit(&mut r, &Query { status: QueryStatus::Unavailable, count: 0, detail: String::new() });
+        emit(
+            &mut r,
+            &Query {
+                status: QueryStatus::Unavailable,
+                count: 0,
+                detail: String::new(),
+            },
+        );
         assert_eq!(last(&r).status, CheckStatus::Skip);
         assert_eq!(last(&r).message, "pacman not available");
     }

@@ -36,7 +36,11 @@ pub struct Detail {
 
 impl Detail {
     pub fn new(cap: usize) -> Self {
-        Detail { buf: Vec::new(), cap, used: 0 }
+        Detail {
+            buf: Vec::new(),
+            cap,
+            used: 0,
+        }
     }
 
     pub fn used(&self) -> usize {

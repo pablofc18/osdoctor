@@ -150,7 +150,13 @@ pub fn run(results: &mut Vec<CheckResult>) {
     }
 
     if path_writable("/tmp") {
-        results.push(CheckResult::new("tmp-writable", GROUP, CheckStatus::Ok, "/tmp is writable", ""));
+        results.push(CheckResult::new(
+            "tmp-writable",
+            GROUP,
+            CheckStatus::Ok,
+            "/tmp is writable",
+            "",
+        ));
     } else {
         results.push(CheckResult::new(
             "tmp-writable",
@@ -170,9 +176,18 @@ mod tests {
 
     #[test]
     fn meminfo_parse() {
-        assert_eq!(parse_meminfo_line("MemTotal:       32684 kB", "MemTotal:"), Some(32684));
-        assert_eq!(parse_meminfo_line("MemAvailable:   100 kB", "MemAvailable:"), Some(100));
-        assert_eq!(parse_meminfo_line("MemFree:        5 kB", "MemTotal:"), None);
+        assert_eq!(
+            parse_meminfo_line("MemTotal:       32684 kB", "MemTotal:"),
+            Some(32684)
+        );
+        assert_eq!(
+            parse_meminfo_line("MemAvailable:   100 kB", "MemAvailable:"),
+            Some(100)
+        );
+        assert_eq!(
+            parse_meminfo_line("MemFree:        5 kB", "MemTotal:"),
+            None
+        );
     }
 
     #[test]
@@ -180,7 +195,15 @@ mod tests {
         let mut results = Vec::new();
         run(&mut results);
         let ids: Vec<&str> = results.iter().map(|r| r.id).collect();
-        assert_eq!(ids, ["kernel-version", "root-disk-space", "tmp-writable", "memory-info"]);
+        assert_eq!(
+            ids,
+            [
+                "kernel-version",
+                "root-disk-space",
+                "tmp-writable",
+                "memory-info"
+            ]
+        );
         assert!(results.iter().all(|r| r.group == "System"));
     }
 }

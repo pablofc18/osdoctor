@@ -8,7 +8,10 @@ pub fn render_json(results: &[CheckResult]) -> String {
     let s = summarize(results);
     let mut out = String::new();
     out.push_str("{\n");
-    out.push_str(&format!("  \"status\": \"{}\",\n", overall_status(s).json()));
+    out.push_str(&format!(
+        "  \"status\": \"{}\",\n",
+        overall_status(s).json()
+    ));
     out.push_str("  \"summary\": {\n");
     out.push_str(&format!("    \"ok\": {},\n", s.ok));
     out.push_str(&format!("    \"warn\": {},\n", s.warn));

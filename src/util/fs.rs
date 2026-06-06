@@ -137,7 +137,9 @@ mod tests {
     fn executable_lookup() {
         assert!(is_executable_in_path("sh"));
         assert!(is_executable_in_path("/bin/sh"));
-        assert!(!is_executable_in_path("osdoctor_definitely_not_a_real_command_xyz"));
+        assert!(!is_executable_in_path(
+            "osdoctor_definitely_not_a_real_command_xyz"
+        ));
         assert!(!is_executable_in_path("/no/such/path/binary"));
     }
 

@@ -12,7 +12,13 @@ const GROUP: &str = "Desktop";
 fn check_wayland(results: &mut Vec<CheckResult>) {
     match std::env::var("XDG_SESSION_TYPE") {
         Ok(t) if t == "wayland" => {
-            results.push(CheckResult::new("wayland-session", GROUP, CheckStatus::Ok, "Wayland session detected", ""));
+            results.push(CheckResult::new(
+                "wayland-session",
+                GROUP,
+                CheckStatus::Ok,
+                "Wayland session detected",
+                "",
+            ));
         }
         Ok(t) if !t.is_empty() => {
             results.push(CheckResult::new(
@@ -24,7 +30,13 @@ fn check_wayland(results: &mut Vec<CheckResult>) {
             ));
         }
         _ => {
-            results.push(CheckResult::new("wayland-session", GROUP, CheckStatus::Warn, "XDG_SESSION_TYPE not set", ""));
+            results.push(CheckResult::new(
+                "wayland-session",
+                GROUP,
+                CheckStatus::Warn,
+                "XDG_SESSION_TYPE not set",
+                "",
+            ));
         }
     }
 }
@@ -43,14 +55,32 @@ fn check_hyprland_socket(results: &mut Vec<CheckResult>) {
     }
     let xdg = std::env::var("XDG_RUNTIME_DIR").unwrap_or_default();
     if xdg.is_empty() {
-        results.push(CheckResult::new("hyprland-socket", GROUP, CheckStatus::Warn, "XDG_RUNTIME_DIR not set", ""));
+        results.push(CheckResult::new(
+            "hyprland-socket",
+            GROUP,
+            CheckStatus::Warn,
+            "XDG_RUNTIME_DIR not set",
+            "",
+        ));
         return;
     }
     let path = format!("{xdg}/hypr/{sig}/.socket.sock");
     if file_exists(&path) {
-        results.push(CheckResult::new("hyprland-socket", GROUP, CheckStatus::Ok, "Hyprland socket detected", ""));
+        results.push(CheckResult::new(
+            "hyprland-socket",
+            GROUP,
+            CheckStatus::Ok,
+            "Hyprland socket detected",
+            "",
+        ));
     } else {
-        results.push(CheckResult::new("hyprland-socket", GROUP, CheckStatus::Warn, "Hyprland socket not found", path));
+        results.push(CheckResult::new(
+            "hyprland-socket",
+            GROUP,
+            CheckStatus::Warn,
+            "Hyprland socket not found",
+            path,
+        ));
     }
 }
 

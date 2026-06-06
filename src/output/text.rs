@@ -27,7 +27,13 @@ pub fn render_text(results: &[CheckResult], color: bool) -> String {
             prev_group = Some(r.group);
         }
         let col = if color { color_for(r.status) } else { "" };
-        out.push_str(&format!("  {}{}{} {}\n", col, r.status.symbol(), reset, r.message));
+        out.push_str(&format!(
+            "  {}{}{} {}\n",
+            col,
+            r.status.symbol(),
+            reset,
+            r.message
+        ));
         if !r.detail.is_empty() {
             out.push_str(&format!("      {}{}{}\n", dim, r.detail, reset));
         }
@@ -84,7 +90,13 @@ mod tests {
 
     #[test]
     fn skipped_count_appended() {
-        let results = vec![CheckResult::new("s", "System", CheckStatus::Skip, "skipped", "")];
+        let results = vec![CheckResult::new(
+            "s",
+            "System",
+            CheckStatus::Skip,
+            "skipped",
+            "",
+        )];
         let out = render_text(&results, false);
         assert!(out.contains("  Checks: 0 ok, 0 warnings, 0 failures, 1 skipped\n"));
     }

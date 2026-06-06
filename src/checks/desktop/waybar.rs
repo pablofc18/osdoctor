@@ -102,7 +102,13 @@ pub fn check_scripts(results: &mut Vec<CheckResult>) {
     } else if file_exists(&plain) {
         plain
     } else {
-        results.push(CheckResult::new("waybar-scripts", GROUP, CheckStatus::Skip, "Waybar config not found", ""));
+        results.push(CheckResult::new(
+            "waybar-scripts",
+            GROUP,
+            CheckStatus::Skip,
+            "Waybar config not found",
+            "",
+        ));
         return;
     };
     let config_dir = std::path::Path::new(&cfg)
@@ -114,7 +120,13 @@ pub fn check_scripts(results: &mut Vec<CheckResult>) {
     let content = match read_file(&cfg, CONFIG_MAX_BYTES) {
         Some(c) => c,
         None => {
-            results.push(CheckResult::new("waybar-scripts", GROUP, CheckStatus::Skip, "Could not read Waybar config", ""));
+            results.push(CheckResult::new(
+                "waybar-scripts",
+                GROUP,
+                CheckStatus::Skip,
+                "Could not read Waybar config",
+                "",
+            ));
             return;
         }
     };
@@ -129,7 +141,13 @@ pub fn check_scripts(results: &mut Vec<CheckResult>) {
         } else {
             format!("Waybar scripts resolved ({checked} checked)")
         };
-        results.push(CheckResult::new("waybar-scripts", GROUP, CheckStatus::Ok, msg, ""));
+        results.push(CheckResult::new(
+            "waybar-scripts",
+            GROUP,
+            CheckStatus::Ok,
+            msg,
+            "",
+        ));
         return;
     }
     for m in &missing {

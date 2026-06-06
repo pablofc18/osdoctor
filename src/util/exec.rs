@@ -7,8 +7,15 @@ use std::process::{Command, Stdio};
 /// where exit_code is None if the process could not be spawned or did not exit
 /// normally.
 pub fn run_capture(program: &str, args: &[&str]) -> (String, Option<i32>) {
-    match Command::new(program).args(args).stderr(Stdio::null()).output() {
-        Ok(o) => (String::from_utf8_lossy(&o.stdout).into_owned(), o.status.code()),
+    match Command::new(program)
+        .args(args)
+        .stderr(Stdio::null())
+        .output()
+    {
+        Ok(o) => (
+            String::from_utf8_lossy(&o.stdout).into_owned(),
+            o.status.code(),
+        ),
         Err(_) => (String::new(), None),
     }
 }

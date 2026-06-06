@@ -3,7 +3,9 @@
 //! resolving ~, $VAR, relative and glob includes, with cycle and depth guards.
 
 use crate::model::{CheckResult, CheckStatus};
-use crate::util::fs::{expand_home_path, file_exists, glob_paths, is_executable_in_path, join_path, read_file};
+use crate::util::fs::{
+    expand_home_path, file_exists, glob_paths, is_executable_in_path, join_path, read_file,
+};
 
 const GROUP: &str = "Desktop";
 pub const MAX_INCLUDE_DEPTH: i32 = 32;
@@ -149,7 +151,13 @@ fn process_bind_line(line: &str, scan: &mut BindScan) {
     }
 }
 
-fn scan_source(value: &str, base_dir: &str, scan: &mut BindScan, visited: &mut Vec<String>, depth: i32) {
+fn scan_source(
+    value: &str,
+    base_dir: &str,
+    scan: &mut BindScan,
+    visited: &mut Vec<String>,
+    depth: i32,
+) {
     let expanded = expand_env_vars(value);
     let pattern = if expanded.starts_with('~') {
         expand_home_path(&expanded)
@@ -252,7 +260,12 @@ mod tests {
             .unwrap()
             .as_nanos();
         let mut p = std::env::temp_dir();
-        p.push(format!("osdoctor_hypr_{}_{}_{}", tag, std::process::id(), nanos));
+        p.push(format!(
+            "osdoctor_hypr_{}_{}_{}",
+            tag,
+            std::process::id(),
+            nanos
+        ));
         std::fs::create_dir_all(&p).unwrap();
         p
     }
@@ -270,7 +283,10 @@ mod tests {
     fn root_binds() {
         let dir = unique_dir("root");
         let root = dir.join("hyprland.conf");
-        write(&root, "# comment\nbind = SUPER, Return, exec, sh\nbind = SUPER, X, exec, osd_bogus_root\n");
+        write(
+            &root,
+            "# comment\nbind = SUPER, Return, exec, sh\nbind = SUPER, X, exec, osd_bogus_root\n",
+        );
         let scan = scan_binds(root.to_str().unwrap());
         assert_eq!(scan.checked, 2);
         assert!(has_missing(&scan, "osd_bogus_root"));
@@ -283,7 +299,10 @@ mod tests {
     fn relative_include() {
         let dir = unique_dir("rel");
         write(&dir.join("hyprland.conf"), "source = binds.conf\n");
-        write(&dir.join("binds.conf"), "bind = SUPER, Return, exec, sh\nbind = SUPER, X, exec, osd_bogus_inc\n");
+        write(
+            &dir.join("binds.conf"),
+            "bind = SUPER, Return, exec, sh\nbind = SUPER, X, exec, osd_bogus_inc\n",
+        );
         let scan = scan_binds(dir.join("hyprland.conf").to_str().unwrap());
         assert_eq!(scan.checked, 2);
         assert!(has_missing(&scan, "osd_bogus_inc"));
@@ -298,7 +317,10 @@ mod tests {
         std::env::set_var("HOME", &dir);
         std::fs::create_dir_all(dir.join("inc")).unwrap();
         write(&dir.join("hyprland.conf"), "source = ~/inc/sub.conf\n");
-        write(&dir.join("inc/sub.conf"), "bind = SUPER, A, exec, osd_bogus_tilde\n");
+        write(
+            &dir.join("inc/sub.conf"),
+            "bind = SUPER, A, exec, osd_bogus_tilde\n",
+        );
         let scan = scan_binds(dir.join("hyprland.conf").to_str().unwrap());
         assert_eq!(scan.checked, 1);
         assert!(has_missing(&scan, "osd_bogus_tilde"));
@@ -314,8 +336,14 @@ mod tests {
             &dir.join("hyprland.conf"),
             "source = $OSD_TEST_ENVDIR/env.conf\nsource = ${OSD_TEST_ENVDIR}/env2.conf\n",
         );
-        write(&dir.join("env.conf"), "bind = SUPER, B, exec, osd_bogus_env1\n");
-        write(&dir.join("env2.conf"), "bind = SUPER, C, exec, osd_bogus_env2\n");
+        write(
+            &dir.join("env.conf"),
+            "bind = SUPER, B, exec, osd_bogus_env1\n",
+        );
+        write(
+            &dir.join("env2.conf"),
+            "bind = SUPER, C, exec, osd_bogus_env2\n",
+        );
         let scan = scan_binds(dir.join("hyprland.conf").to_str().unwrap());
         assert_eq!(scan.checked, 2);
         assert!(has_missing(&scan, "osd_bogus_env1"));
@@ -328,8 +356,14 @@ mod tests {
         let dir = unique_dir("glob");
         std::fs::create_dir_all(dir.join("parts")).unwrap();
         write(&dir.join("hyprland.conf"), "source = parts/*.conf\n");
-        write(&dir.join("parts/a.conf"), "bind = SUPER, A, exec, osd_bogus_glob_a\n");
-        write(&dir.join("parts/b.conf"), "bind = SUPER, B, exec, osd_bogus_glob_b\n");
+        write(
+            &dir.join("parts/a.conf"),
+            "bind = SUPER, A, exec, osd_bogus_glob_a\n",
+        );
+        write(
+            &dir.join("parts/b.conf"),
+            "bind = SUPER, B, exec, osd_bogus_glob_b\n",
+        );
         let scan = scan_binds(dir.join("hyprland.conf").to_str().unwrap());
         assert_eq!(scan.checked, 2);
         assert!(has_missing(&scan, "osd_bogus_glob_a"));
@@ -340,8 +374,14 @@ mod tests {
     #[test]
     fn cycle_terminates() {
         let dir = unique_dir("cycle");
-        write(&dir.join("a.conf"), "source = b.conf\nbind = SUPER, A, exec, osd_bogus_cyc_a\n");
-        write(&dir.join("b.conf"), "source = a.conf\nbind = SUPER, B, exec, osd_bogus_cyc_b\n");
+        write(
+            &dir.join("a.conf"),
+            "source = b.conf\nbind = SUPER, A, exec, osd_bogus_cyc_a\n",
+        );
+        write(
+            &dir.join("b.conf"),
+            "source = a.conf\nbind = SUPER, B, exec, osd_bogus_cyc_b\n",
+        );
         let scan = scan_binds(dir.join("a.conf").to_str().unwrap());
         assert_eq!(scan.checked, 2);
         assert!(has_missing(&scan, "osd_bogus_cyc_a"));
@@ -355,7 +395,11 @@ mod tests {
         let chain = MAX_INCLUDE_DEPTH + 5;
         for i in 0..chain {
             let content = if i + 1 < chain {
-                format!("source = f{}.conf\nbind = SUPER, A, exec, osd_bogus_d{}\n", i + 1, i)
+                format!(
+                    "source = f{}.conf\nbind = SUPER, A, exec, osd_bogus_d{}\n",
+                    i + 1,
+                    i
+                )
             } else {
                 format!("bind = SUPER, A, exec, osd_bogus_d{i}\n")
             };
@@ -384,7 +428,10 @@ mod tests {
     #[test]
     fn missing_source_skipped() {
         let dir = unique_dir("missing");
-        write(&dir.join("hyprland.conf"), "source = does_not_exist.conf\nbind = SUPER, Z, exec, osd_bogus_after\n");
+        write(
+            &dir.join("hyprland.conf"),
+            "source = does_not_exist.conf\nbind = SUPER, Z, exec, osd_bogus_after\n",
+        );
         let scan = scan_binds(dir.join("hyprland.conf").to_str().unwrap());
         assert_eq!(scan.checked, 1);
         assert!(has_missing(&scan, "osd_bogus_after"));

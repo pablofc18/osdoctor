@@ -146,9 +146,24 @@ mod tests {
 
     #[test]
     fn exit_codes() {
-        let fail = Summary { ok: 0, warn: 0, fail: 1, skip: 0 };
-        let warn = Summary { ok: 0, warn: 1, fail: 0, skip: 0 };
-        let clean = Summary { ok: 3, warn: 0, fail: 0, skip: 0 };
+        let fail = Summary {
+            ok: 0,
+            warn: 0,
+            fail: 1,
+            skip: 0,
+        };
+        let warn = Summary {
+            ok: 0,
+            warn: 1,
+            fail: 0,
+            skip: 0,
+        };
+        let clean = Summary {
+            ok: 3,
+            warn: 0,
+            fail: 0,
+            skip: 0,
+        };
         assert_eq!(exit_code(fail, false), 2);
         assert_eq!(exit_code(fail, true), 2);
         assert_eq!(exit_code(warn, false), 1);
@@ -158,8 +173,20 @@ mod tests {
 
     #[test]
     fn overall() {
-        assert_eq!(overall_status(Summary { fail: 1, ..Default::default() }), CheckStatus::Fail);
-        assert_eq!(overall_status(Summary { warn: 1, ..Default::default() }), CheckStatus::Warn);
+        assert_eq!(
+            overall_status(Summary {
+                fail: 1,
+                ..Default::default()
+            }),
+            CheckStatus::Fail
+        );
+        assert_eq!(
+            overall_status(Summary {
+                warn: 1,
+                ..Default::default()
+            }),
+            CheckStatus::Warn
+        );
         assert_eq!(overall_status(Summary::default()), CheckStatus::Ok);
     }
 }

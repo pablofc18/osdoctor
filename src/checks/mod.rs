@@ -60,6 +60,10 @@ mod tests {
         assert_eq!(count("System"), 4);
         assert_eq!(count("Services"), 2);
         assert_eq!(count("Packages"), 3);
-        assert!(count("Desktop") >= 4, "Desktop group had {} rows", count("Desktop"));
+        assert!(
+            count("Desktop") >= 4,
+            "Desktop group had {} rows",
+            count("Desktop")
+        );
     }
 }

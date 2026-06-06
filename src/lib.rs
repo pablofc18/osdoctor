@@ -1,9 +1,9 @@
 //! osdoctor — Linux desktop health checks for Arch/Hyprland systems.
 #![allow(clippy::uninlined_format_args)]
 
-pub mod model;
-pub mod cli;
 pub mod checks;
+pub mod cli;
+pub mod model;
 pub mod output;
 pub mod util;
 
