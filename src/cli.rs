@@ -30,31 +30,32 @@ fn parse_command(arg: &str) -> Option<Command> {
 
 fn usage() -> String {
     format!(
-        "osdoctor {VERSION} - Linux desktop health checks for Arch/Hyprland systems\n\
-\n\
-Usage:\n\
-\u{20}\u{20}osdoctor [command] [options]\n\
-\n\
-Commands:\n\
-\u{20}\u{20}scan        Run all health checks (default when no command is given)\n\
-\u{20}\u{20}system      Run system checks only\n\
-\u{20}\u{20}services    Run service checks only\n\
-\u{20}\u{20}packages    Run package checks only\n\
-\u{20}\u{20}desktop     Run desktop/session checks only\n\
-\u{20}\u{20}version     Print version and exit\n\
-\u{20}\u{20}help        Show this help and exit\n\
-\n\
-Options:\n\
-\u{20}\u{20}--json          Output results as JSON\n\
-\u{20}\u{20}--strict        Treat warnings as failures for the exit code\n\
-\u{20}\u{20}-h, --help      Show this help\n\
-\u{20}\u{20}-V, --version   Print version\n\
-\n\
-Exit codes:\n\
-\u{20}\u{20}0  all checks passed\n\
-\u{20}\u{20}1  warnings found, no failures\n\
-\u{20}\u{20}2  one or more failures found\n\
-\u{20}\u{20}3  invalid usage or internal error\n"
+        r#"osdoctor {VERSION} - Linux desktop health checks for Arch/Hyprland systems
+
+Usage:
+  osdoctor [command] [options]
+
+Commands:
+  scan        Run all health checks (default when no command is given)
+  system      Run system checks only
+  services    Run service checks only
+  packages    Run package checks only
+  desktop     Run desktop/session checks only
+  version     Print version and exit
+  help        Show this help and exit
+
+Options:
+  --json          Output results as JSON
+  --strict        Treat warnings as failures for the exit code
+  -h, --help      Show this help
+  -V, --version   Print version
+
+Exit codes:
+  0  all checks passed
+  1  warnings found, no failures
+  2  one or more failures found
+  3  invalid usage or internal error
+"#
     )
 }
 
