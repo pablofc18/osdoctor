@@ -6,6 +6,8 @@ use crate::model::{CheckResult, CheckStatus};
 use crate::util::fs::{
     expand_home_path, file_exists, glob_paths, is_executable_in_path, join_path, read_file,
 };
+use crate::util::strings::push_unique_capped;
+use std::collections::HashMap;
 
 const GROUP: &str = "Desktop";
 pub const MAX_INCLUDE_DEPTH: i32 = 32;
@@ -17,14 +19,24 @@ const CONFIG_MAX_BYTES: usize = 1 << 20;
 pub struct BindScan {
     pub missing: Vec<String>,
     pub checked: i32,
+    /// Memoized PATH-resolution results, so a command bound many times only
+    /// walks PATH once.
+    resolved: HashMap<String, bool>,
 }
 
 impl BindScan {
     fn add_missing(&mut self, value: &str) {
-        if self.missing.iter().any(|m| m == value) || self.missing.len() >= SET_CAP {
-            return;
+        push_unique_capped(&mut self.missing, value, SET_CAP);
+    }
+
+    /// Whether `tok` resolves to an executable, caching the answer per token.
+    fn resolves(&mut self, tok: &str) -> bool {
+        if let Some(&known) = self.resolved.get(tok) {
+            return known;
         }
-        self.missing.push(value.to_string());
+        let ok = is_executable_in_path(&expand_home_path(tok));
+        self.resolved.insert(tok.to_string(), ok);
+        ok
     }
 }
 
@@ -146,7 +158,7 @@ fn process_bind_line(line: &str, scan: &mut BindScan) {
         return;
     }
     scan.checked += 1;
-    if !is_executable_in_path(&expand_home_path(&tok)) {
+    if !scan.resolves(&tok) {
         scan.add_missing(&tok);
     }
 }
@@ -252,23 +264,8 @@ pub fn check_binds(results: &mut Vec<CheckResult>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::unique_dir;
     use std::io::Write;
-
-    fn unique_dir(tag: &str) -> std::path::PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let mut p = std::env::temp_dir();
-        p.push(format!(
-            "osdoctor_hypr_{}_{}_{}",
-            tag,
-            std::process::id(),
-            nanos
-        ));
-        std::fs::create_dir_all(&p).unwrap();
-        p
-    }
 
     fn write(path: &std::path::Path, content: &str) {
         let mut f = std::fs::File::create(path).unwrap();

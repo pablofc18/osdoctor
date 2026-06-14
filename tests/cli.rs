@@ -8,7 +8,10 @@ fn bin() -> Command {
 fn version_prints_exact_line() {
     let out = bin().arg("version").output().unwrap();
     assert!(out.status.success());
-    assert_eq!(String::from_utf8_lossy(&out.stdout), "osdoctor 0.1.0\n");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        format!("osdoctor {}\n", env!("CARGO_PKG_VERSION"))
+    );
 }
 
 #[test]
@@ -17,7 +20,7 @@ fn help_mentions_usage() {
     assert!(out.status.success());
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("Usage:"));
-    assert!(s.contains("osdoctor [command] [options]"));
+    assert!(s.contains("osdoctor <command> [options]"));
 }
 
 #[test]

@@ -4,6 +4,7 @@
 
 use crate::model::{CheckResult, CheckStatus};
 use crate::util::fs::{expand_home_path, file_exists, read_file};
+use crate::util::strings::push_unique_capped;
 
 const GROUP: &str = "Desktop";
 const CONFIG_MAX_BYTES: usize = 1 << 20;
@@ -20,7 +21,7 @@ fn looks_like_local_script(tok: &str) -> bool {
             || tok.contains("/.config/"))
 }
 
-fn strip_script_edges(s: &str) -> String {
+fn strip_script_edges(s: &str) -> &str {
     let b = s.as_bytes();
     let mut start = 0;
     while start < b.len() && matches!(b[start], b'"' | b'\'' | b'`') {
@@ -30,7 +31,9 @@ fn strip_script_edges(s: &str) -> String {
     while end > start && matches!(b[end - 1], b'"' | b'\'' | b'`' | b';' | b',' | b'&' | b'|') {
         end -= 1;
     }
-    s[start..end].to_string()
+    // Only ASCII edge bytes are trimmed, so start/end are always char
+    // boundaries (continuation bytes are >= 0x80 and never match).
+    &s[start..end]
 }
 
 fn resolve_script(tok: &str, config_dir: &str) -> String {
@@ -49,46 +52,42 @@ fn resolve_script(tok: &str, config_dir: &str) -> String {
     format!("{config_dir}/{rel}")
 }
 
-fn add_dedup(set: &mut Vec<String>, value: &str) {
-    if set.iter().any(|m| m == value) || set.len() >= SET_CAP {
-        return;
-    }
-    set.push(value.to_string());
-}
-
 fn scan_strings(content: &str, config_dir: &str, missing: &mut Vec<String>, checked: &mut i32) {
-    let chars: Vec<char> = content.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        if chars[i] != '"' {
-            i += 1;
+    let mut it = content.chars().peekable();
+    while let Some(c) = it.next() {
+        if c != '"' {
             continue;
         }
+        // Collect the (un-escaped) contents of this double-quoted string. A
+        // backslash escapes the next char; a trailing lone backslash is kept.
         let mut buf = String::new();
-        i += 1; // opening quote
-        while i < chars.len() && chars[i] != '"' {
-            if chars[i] == '\\' && i + 1 < chars.len() {
-                buf.push(chars[i + 1]);
-                i += 2;
+        while let Some(&c2) = it.peek() {
+            if c2 == '"' {
+                it.next(); // closing quote
+                break;
+            }
+            if c2 == '\\' {
+                it.next(); // consume the backslash
+                match it.next() {
+                    Some(esc) => buf.push(esc),
+                    None => buf.push('\\'),
+                }
                 continue;
             }
-            buf.push(chars[i]);
-            i += 1;
-        }
-        if i < chars.len() && chars[i] == '"' {
-            i += 1; // closing quote
+            buf.push(c2);
+            it.next();
         }
         for t in buf.split([' ', '\t']) {
             if t.is_empty() {
                 continue;
             }
             let tok = strip_script_edges(t);
-            if !looks_like_local_script(&tok) {
+            if !looks_like_local_script(tok) {
                 continue;
             }
             *checked += 1;
-            if !file_exists(&resolve_script(&tok, config_dir)) {
-                add_dedup(missing, &tok);
+            if !file_exists(&resolve_script(tok, config_dir)) {
+                push_unique_capped(missing, tok, SET_CAP);
             }
         }
     }
@@ -164,6 +163,7 @@ pub fn check_scripts(results: &mut Vec<CheckResult>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::unique_dir;
     use std::io::Write;
 
     #[test]
@@ -177,12 +177,7 @@ mod tests {
 
     #[test]
     fn scan_relative_scripts() {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let mut dir = std::env::temp_dir();
-        dir.push(format!("osdoctor_waybar_{}_{}", std::process::id(), nanos));
+        let dir = unique_dir("waybar");
         std::fs::create_dir_all(dir.join("scripts")).unwrap();
         let mut f = std::fs::File::create(dir.join("scripts/present")).unwrap();
         f.write_all(b"#!/bin/sh\n").unwrap();

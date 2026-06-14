@@ -16,7 +16,7 @@ pub enum Scope {
     User,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum QueryStatus {
     Ok,
     NoSession,
@@ -94,6 +94,28 @@ fn count_units(out: &str) -> (i32, String) {
     (count, detail.into_string())
 }
 
+/// Turn a systemctl (stdout, exit code) into a Query. A non-zero (or absent)
+/// exit means the manager could not be queried: for the user scope there is no
+/// user session, for the system scope no reachable system bus. Both map to
+/// NoSession (a Skip) rather than a false "no failed services" OK. `systemctl
+/// --failed` exits 0 even when units have failed, so a clean exit is parsed for
+/// the unit list.
+fn classify(code: Option<i32>, out: &str) -> Query {
+    if code != Some(0) {
+        return Query {
+            status: QueryStatus::NoSession,
+            count: 0,
+            detail: String::new(),
+        };
+    }
+    let (count, detail) = count_units(out);
+    Query {
+        status: QueryStatus::Ok,
+        count,
+        detail,
+    }
+}
+
 fn query_systemctl(scope: Scope) -> Query {
     if !is_executable_in_path("systemctl") {
         return Query {
@@ -107,19 +129,7 @@ fn query_systemctl(scope: Scope) -> Query {
         Scope::User => &["--user", "--failed", "--no-legend", "--plain"],
     };
     let (out, code) = run_capture("systemctl", args);
-    if scope == Scope::User && code != Some(0) {
-        return Query {
-            status: QueryStatus::NoSession,
-            count: 0,
-            detail: String::new(),
-        };
-    }
-    let (count, detail) = count_units(&out);
-    Query {
-        status: QueryStatus::Ok,
-        count,
-        detail,
-    }
+    classify(code, &out)
 }
 
 pub fn run(results: &mut Vec<CheckResult>) {
@@ -252,5 +262,43 @@ mod tests {
         let (n, detail) = count_units("a.service loaded failed\n\nb.service x y\n");
         assert_eq!(n, 2);
         assert_eq!(detail, "a.service, b.service");
+    }
+
+    #[test]
+    fn emit_no_session_system() {
+        let mut r = Vec::new();
+        emit(
+            &mut r,
+            Scope::System,
+            &Query {
+                status: QueryStatus::NoSession,
+                count: 0,
+                detail: String::new(),
+            },
+        );
+        assert_eq!(last(&r).status, CheckStatus::Skip);
+        assert_eq!(last(&r).message, "No system bus available");
+    }
+
+    #[test]
+    fn classify_nonzero_exit_is_no_session() {
+        // A non-zero systemctl exit means the manager/bus could not be queried
+        // (no user session, or no reachable system bus). Either is a Skip, not
+        // a false "no failed services" OK — including the system scope, which
+        // previously ignored the exit code.
+        let q = classify(Some(1), "");
+        assert_eq!(q.status, QueryStatus::NoSession);
+        assert_eq!(q.count, 0);
+
+        let q = classify(None, "");
+        assert_eq!(q.status, QueryStatus::NoSession);
+    }
+
+    #[test]
+    fn classify_zero_exit_counts_units() {
+        let q = classify(Some(0), "a.service loaded failed\nb.service x y\n");
+        assert_eq!(q.status, QueryStatus::Ok);
+        assert_eq!(q.count, 2);
+        assert_eq!(q.detail, "a.service, b.service");
     }
 }

@@ -3,7 +3,7 @@ System
       Linux 7.0.9-arch2-1 #1 SMP PREEMPT_DYNAMIC Fri, 22 May 2026 19:25:09 +0000
   ✓ Root filesystem has 403 GB free
   ✓ /tmp is writable
-  ✓ Memory: 26811 MB available of 31956 MB
+  ✓ Memory: 26792 MB available of 31956 MB
 
 Services
   ✓ No failed system services

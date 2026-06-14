@@ -33,10 +33,10 @@ fn usage() -> String {
         r#"osdoctor {VERSION} - Linux desktop health checks for Arch/Hyprland systems
 
 Usage:
-  osdoctor [command] [options]
+  osdoctor <command> [options]
 
 Commands:
-  scan        Run all health checks (default when no command is given)
+  scan        Run all health checks
   system      Run system checks only
   services    Run service checks only
   packages    Run package checks only
@@ -158,7 +158,7 @@ mod tests {
     fn usage_text_has_version_and_sections() {
         let u = usage();
         assert!(u.starts_with(&format!("osdoctor {VERSION} - Linux desktop health checks")));
-        assert!(u.contains("\n  osdoctor [command] [options]\n"));
+        assert!(u.contains("\n  osdoctor <command> [options]\n"));
         assert!(u.contains("\nExit codes:\n"));
     }
 }

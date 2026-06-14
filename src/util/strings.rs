@@ -69,6 +69,16 @@ impl Detail {
     }
 }
 
+/// Push `value` into `set` unless it is already present or `set` has reached
+/// `cap`. This is the small, capped, de-duplicating "string set" the desktop
+/// config scanners use to collect missing commands / scripts.
+pub fn push_unique_capped(set: &mut Vec<String>, value: &str, cap: usize) {
+    if set.iter().any(|v| v == value) || set.len() >= cap {
+        return;
+    }
+    set.push(value.to_string());
+}
+
 /// Largest byte index <= `index` that is a char boundary of `s`.
 fn floor_char_boundary(s: &str, index: usize) -> usize {
     if index >= s.len() {
@@ -102,6 +112,16 @@ mod tests {
         d.append("gamma");
         assert_eq!(d.used(), 18);
         assert_eq!(d.into_string(), "alpha, beta, gamma");
+    }
+
+    #[test]
+    fn push_unique_capped_dedups_and_caps() {
+        let mut s = Vec::new();
+        push_unique_capped(&mut s, "a", 2);
+        push_unique_capped(&mut s, "a", 2); // duplicate: ignored
+        push_unique_capped(&mut s, "b", 2);
+        push_unique_capped(&mut s, "c", 2); // at cap: ignored
+        assert_eq!(s, vec!["a".to_string(), "b".to_string()]);
     }
 
     #[test]

@@ -44,6 +44,10 @@ mod tests {
     // the host-independent contract instead.)
     #[test]
     fn run_all_emits_four_groups_in_order() {
+        // run_all's desktop checks read HOME / XDG_* via the environment; hold
+        // the env mutex so this can't race the tests that set HOME (concurrent
+        // set_var/getenv is undefined behaviour).
+        let _env = crate::ENV_MUTEX.lock().unwrap();
         let mut results = Vec::new();
         run_all(&mut results);
 

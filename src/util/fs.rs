@@ -70,9 +70,20 @@ pub fn expand_home_path(path: &str) -> String {
 pub fn read_file(path: &str, max_bytes: usize) -> Option<String> {
     use std::io::Read;
     let f = std::fs::File::open(path).ok()?;
-    let mut buf = Vec::new();
+    // Pre-size from the file length (clamped to the cap) to avoid the growth
+    // reallocs of an empty Vec.
+    let cap = f
+        .metadata()
+        .map(|m| (m.len() as usize).min(max_bytes))
+        .unwrap_or(0);
+    let mut buf = Vec::with_capacity(cap);
     f.take(max_bytes as u64).read_to_end(&mut buf).ok()?;
-    Some(String::from_utf8_lossy(&buf).into_owned())
+    // Move the bytes into the String when they are valid UTF-8 (the common
+    // case, zero-copy); fall back to the lossy conversion only when they aren't.
+    Some(
+        String::from_utf8(buf)
+            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()),
+    )
 }
 
 /// Expand a POSIX glob pattern via libc::glob (same matcher the C used). Returns
@@ -103,18 +114,8 @@ pub fn glob_paths(pattern: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::unique_dir;
     use std::io::Write;
-
-    fn unique_dir(tag: &str) -> std::path::PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let mut p = std::env::temp_dir();
-        p.push(format!("osdoctor_{}_{}_{}", tag, std::process::id(), nanos));
-        std::fs::create_dir_all(&p).unwrap();
-        p
-    }
 
     #[test]
     fn join_cases() {
