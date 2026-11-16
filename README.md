@@ -308,20 +308,6 @@ hand-written FFI modules (`src/checks/services_sdbus.rs`,
 
 ---
 
-## Roadmap
-
-Planned work is tracked in the [issue tracker](https://github.com/pablofc18/osdoctor/issues):
-
-- ~~[Use `libalpm` directly instead of shelling out to `pacman`](https://github.com/pablofc18/osdoctor/issues/3)~~ - done; built with `--features libalpm`.
-- [Config file for thresholds and toggling checks](https://github.com/pablofc18/osdoctor/issues/4)
-- [Plugin-style external checks](https://github.com/pablofc18/osdoctor/issues/5)
-- [TUI mode](https://github.com/pablofc18/osdoctor/issues/6)
-- [HTML report exporter](https://github.com/pablofc18/osdoctor/issues/7)
-- [Opt-in fix suggestions](https://github.com/pablofc18/osdoctor/issues/8) - still read-only by default.
-- [AUR package](https://github.com/pablofc18/osdoctor/issues/9)
-
----
-
 ## Safety
 
 - **Read-only by design.** osdoctor inspects state; it never modifies it.
