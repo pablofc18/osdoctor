@@ -1,0 +1,19 @@
+pkgbase = osdoctor
+	pkgdesc = Linux desktop health checks for Arch/Hyprland systems
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/pablofc18/osdoctor
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = cargo
+	depends = glibc
+	depends = gcc-libs
+	depends = systemd-libs
+	depends = pacman
+	optdepends = hyprland: Hyprland desktop/session checks
+	optdepends = waybar: Waybar configuration checks
+	source = osdoctor-0.1.0.tar.gz::https://github.com/pablofc18/osdoctor/archive/refs/tags/v0.1.0.tar.gz
+	sha256sums = 032fcdaf0c2b8700e661d2f207aec9897603b58989fa94d28ab2888c1b0f3094
+
+pkgname = osdoctor

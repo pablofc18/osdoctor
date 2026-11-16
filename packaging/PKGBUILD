@@ -11,7 +11,7 @@ makedepends=('cargo')
 optdepends=('hyprland: Hyprland desktop/session checks'
             'waybar: Waybar configuration checks')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('032fcdaf0c2b8700e661d2f207aec9897603b58989fa94d28ab2888c1b0f3094')
 
 # Build with the sd-bus service backend and the libalpm package backend; both
 # systemd-libs and pacman are always present on Arch. The features are passed

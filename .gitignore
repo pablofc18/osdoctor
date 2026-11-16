@@ -8,3 +8,9 @@
 
 # Local design notes and plans
 /docs/
+
+# makepkg output when building from packaging/
+/packaging/src/
+/packaging/pkg/
+/packaging/*.tar.gz
+/packaging/*.pkg.tar.*
