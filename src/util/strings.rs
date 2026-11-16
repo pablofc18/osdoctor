@@ -1,11 +1,8 @@
-//! String helpers that have no faithful std equivalent (replaces the tested
-//! parts of util_string.c). Trivial helpers (trim/starts_with/contains/line
-//! splitting) are dropped in favour of std (`str::trim`, `str::starts_with`,
-//! `str::contains`, `str::lines`), which match the C behaviour exactly.
+//! String helpers std does not provide: JSON escaping, a bounded
+//! comma-separated accumulator, a capped de-duplicating set, and environment
+//! variable expansion.
 
-/// Escape `input` for embedding in a JSON double-quoted string. Mirrors
-/// json_escape() in util_string.c. Returns an owned String (Rust strings grow,
-/// so the C truncation path is not needed).
+/// Escape `input` for embedding in a JSON double-quoted string.
 pub fn json_escape(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
@@ -24,10 +21,10 @@ pub fn json_escape(input: &str) -> String {
     out
 }
 
-/// Bounded, comma-separated accumulator. Reproduces the snprintf-truncation and
-/// `used`-clamp semantics of svc_detail_append/pkg_detail_append so the comma
-/// sample truncates and stops appending exactly as in C. One type replaces the
-/// two identical C helpers.
+/// Bounded, comma-separated accumulator for the detail line of a check (for
+/// example the names of failed units). The text never exceeds `cap - 1`
+/// bytes: an item that does not fit is cut at a char boundary, and nothing
+/// more is appended once the buffer is full.
 pub struct Detail {
     buf: Vec<u8>,
     cap: usize,
@@ -48,7 +45,7 @@ impl Detail {
     }
 
     pub fn append(&mut self, name: &str) {
-        // C guard: no-op once the buffer is effectively full.
+        // No-op once the buffer is effectively full.
         if self.cap == 0 || self.used + 1 >= self.cap {
             return;
         }
@@ -77,6 +74,41 @@ pub fn push_unique_capped(set: &mut Vec<String>, value: &str, cap: usize) {
         return;
     }
     set.push(value.to_string());
+}
+
+/// Expand $VAR / ${VAR} from the environment; undefined -> empty, lone '$' kept.
+pub fn expand_env_vars(input: &str) -> String {
+    let chars: Vec<char> = input.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] != '$' {
+            out.push(chars[i]);
+            i += 1;
+            continue;
+        }
+        i += 1;
+        let braced = i < chars.len() && chars[i] == '{';
+        if braced {
+            i += 1;
+        }
+        let mut name = String::new();
+        while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
+            name.push(chars[i]);
+            i += 1;
+        }
+        if braced && i < chars.len() && chars[i] == '}' {
+            i += 1;
+        }
+        if name.is_empty() {
+            out.push('$');
+            continue;
+        }
+        if let Ok(val) = std::env::var(&name) {
+            out.push_str(&val);
+        }
+    }
+    out
 }
 
 /// Largest byte index <= `index` that is a char boundary of `s`.
@@ -122,6 +154,17 @@ mod tests {
         push_unique_capped(&mut s, "b", 2);
         push_unique_capped(&mut s, "c", 2); // at cap: ignored
         assert_eq!(s, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
+    fn env_vars_expand() {
+        let _g = crate::ENV_MUTEX.lock().unwrap();
+        std::env::set_var("OSD_TEST_EXPAND", "/v");
+        std::env::remove_var("OSD_TEST_UNSET");
+        assert_eq!(expand_env_vars("$OSD_TEST_EXPAND/a"), "/v/a");
+        assert_eq!(expand_env_vars("${OSD_TEST_EXPAND}/a"), "/v/a");
+        assert_eq!(expand_env_vars("x$OSD_TEST_UNSET/a"), "x/a"); // undefined -> empty
+        assert_eq!(expand_env_vars("$(cmd) $ 5"), "$(cmd) $ 5"); // not variables
     }
 
     #[test]

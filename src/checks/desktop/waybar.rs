@@ -1,124 +1,138 @@
-//! Waybar local-script validation (part of check_desktop.c). Walks the
-//! double-quoted JSON strings in the Waybar config, finds tokens that look like
-//! local script paths, and FAILs on any that do not resolve.
+//! Waybar local-script validation. Reads the Waybar config
+//! (`$XDG_CONFIG_HOME/waybar/config.jsonc`, else `.../waybar/config`), and for
+//! every command field (`exec`, `exec-*`, `on-*`) takes the program `sh -c`
+//! would run. Programs that look like local scripts must exist; missing ones
+//! FAIL, since the module is then broken.
 
 use crate::model::{CheckResult, CheckStatus};
-use crate::util::fs::{expand_home_path, file_exists, read_file};
-use crate::util::strings::push_unique_capped;
+use crate::util::fs::{config_home, expand_home_path, file_exists, join_path, read_file};
+use crate::util::shell::command_word;
+use crate::util::strings::{expand_env_vars, push_unique_capped};
 
 const GROUP: &str = "Desktop";
 const CONFIG_MAX_BYTES: usize = 1 << 20;
 const SET_CAP: usize = 64;
 
-fn looks_like_local_script(tok: &str) -> bool {
-    !tok.is_empty()
-        && !tok.contains("://") // a URL (https://, file://), not a script on disk
-        && (tok.starts_with("~/")
-            || tok.starts_with("./")
-            || tok.starts_with("$HOME/")
-            || tok.starts_with("/home/")
-            || tok.starts_with("scripts/")
-            || tok.contains("/scripts/")
-            || tok.contains("/.config/"))
+/// Whether a (variable-expanded) program path points at a user's own script
+/// rather than an installed program found on PATH.
+fn looks_like_local_script(prog: &str) -> bool {
+    !prog.is_empty()
+        && !prog.contains("://") // a URL (https://, file://), not a script on disk
+        && (prog.starts_with("~/")
+            || prog.starts_with("./")
+            || prog.starts_with("/home/")
+            || prog.starts_with("scripts/")
+            || prog.contains("/scripts/")
+            || prog.contains("/.config/"))
 }
 
-fn strip_script_edges(s: &str) -> &str {
-    let b = s.as_bytes();
-    let mut start = 0;
-    while start < b.len() && matches!(b[start], b'"' | b'\'' | b'`') {
-        start += 1;
-    }
-    let mut end = b.len();
-    while end > start && matches!(b[end - 1], b'"' | b'\'' | b'`' | b';' | b',' | b'&' | b'|') {
-        end -= 1;
-    }
-    // Only ASCII edge bytes are trimmed, so start/end are always char
-    // boundaries (continuation bytes are >= 0x80 and never match).
-    &s[start..end]
+/// Waybar keys whose string value is a shell command: `exec`, `exec-if`,
+/// `on-click*`, `on-scroll-*`, `on-update`, ...
+fn is_command_key(key: &str) -> bool {
+    key == "exec" || key.starts_with("exec-") || key.starts_with("on-")
 }
 
-fn resolve_script(tok: &str, config_dir: &str) -> String {
-    if tok.starts_with("$HOME/") {
-        let home = std::env::var("HOME").unwrap_or_default();
-        let rest = &tok[5..]; // keeps the leading '/'
-        return format!("{home}{rest}");
+/// Resolve a script path for an existence test; relative paths resolve
+/// against the config directory.
+fn resolve_script(prog: &str, config_dir: &str) -> String {
+    if prog.starts_with('~') {
+        return expand_home_path(prog);
     }
-    if tok.starts_with('~') {
-        return expand_home_path(tok);
+    if prog.starts_with('/') {
+        return prog.to_string();
     }
-    if tok.starts_with('/') {
-        return tok.to_string();
-    }
-    let rel = tok.strip_prefix("./").unwrap_or(tok);
-    format!("{config_dir}/{rel}")
+    join_path(config_dir, prog.strip_prefix("./").unwrap_or(prog))
 }
 
-fn scan_strings(content: &str, config_dir: &str, missing: &mut Vec<String>, checked: &mut i32) {
+#[derive(Debug, PartialEq)]
+enum Token {
+    Str(String),
+    Colon,
+    /// Any other JSON punctuation or literal; only its position matters.
+    Other,
+}
+
+/// Tokenize JSONC: strings (with escapes decoded), colons, and everything
+/// else. `//` line and `/* */` block comments are dropped (only outside
+/// strings; an unterminated block comment runs to the end of the input).
+fn tokenize(content: &str) -> Vec<Token> {
+    let mut tokens = Vec::new();
     let mut it = content.chars().peekable();
     while let Some(c) = it.next() {
-        // Waybar configs are JSONC: skip // line and /* block */ comments
-        // (only recognised outside strings; an unterminated block comment
-        // runs to the end of the file).
-        if c == '/' && it.peek() == Some(&'/') {
-            for c2 in it.by_ref() {
-                if c2 == '\n' {
-                    break;
+        match c {
+            '/' if it.peek() == Some(&'/') => {
+                for c2 in it.by_ref() {
+                    if c2 == '\n' {
+                        break;
+                    }
                 }
             }
-            continue;
-        }
-        if c == '/' && it.peek() == Some(&'*') {
-            it.next(); // the '*' of the opener
-            let mut prev = '\0';
-            for c2 in it.by_ref() {
-                if prev == '*' && c2 == '/' {
-                    break;
+            '/' if it.peek() == Some(&'*') => {
+                it.next(); // the '*' of the opener
+                let mut prev = '\0';
+                for c2 in it.by_ref() {
+                    if prev == '*' && c2 == '/' {
+                        break;
+                    }
+                    prev = c2;
                 }
-                prev = c2;
             }
-            continue;
-        }
-        if c != '"' {
-            continue;
-        }
-        // Collect the (un-escaped) contents of this double-quoted string. A
-        // backslash escapes the next char; a trailing lone backslash is kept.
-        let mut buf = String::new();
-        while let Some(&c2) = it.peek() {
-            if c2 == '"' {
-                it.next(); // closing quote
-                break;
-            }
-            if c2 == '\\' {
-                it.next(); // consume the backslash
-                match it.next() {
-                    Some(esc) => buf.push(esc),
-                    None => buf.push('\\'),
+            '"' => {
+                // A backslash escapes the next char; a trailing lone
+                // backslash is kept.
+                let mut buf = String::new();
+                while let Some(c2) = it.next() {
+                    match c2 {
+                        '"' => break,
+                        '\\' => buf.push(it.next().unwrap_or('\\')),
+                        _ => buf.push(c2),
+                    }
                 }
-                continue;
+                tokens.push(Token::Str(buf));
             }
-            buf.push(c2);
-            it.next();
+            ':' => tokens.push(Token::Colon),
+            c if c.is_whitespace() => {}
+            _ => tokens.push(Token::Other),
         }
-        for t in buf.split([' ', '\t']) {
-            if t.is_empty() {
-                continue;
+    }
+    tokens
+}
+
+/// The command strings of `"<command key>": "<command>"` pairs in `content`.
+fn command_values(content: &str) -> Vec<String> {
+    let tokens = tokenize(content);
+    let mut out = Vec::new();
+    for w in tokens.windows(3) {
+        if let [Token::Str(key), Token::Colon, Token::Str(value)] = w {
+            if is_command_key(key) {
+                out.push(value.clone());
             }
-            let tok = strip_script_edges(t);
-            if !looks_like_local_script(tok) {
-                continue;
-            }
-            *checked += 1;
-            if !file_exists(&resolve_script(tok, config_dir)) {
-                push_unique_capped(missing, tok, SET_CAP);
-            }
+        }
+    }
+    out
+}
+
+fn scan_commands(content: &str, config_dir: &str, missing: &mut Vec<String>, checked: &mut i32) {
+    for cmd in command_values(content) {
+        // sh -c expands environment variables before running the program.
+        let Some(prog) = command_word(&cmd) else {
+            continue;
+        };
+        let expanded = expand_env_vars(prog);
+        if expanded.contains(['$', '`']) || !looks_like_local_script(&expanded) {
+            continue; // command substitution, or not a local script
+        }
+        *checked += 1;
+        if !file_exists(&resolve_script(&expanded, config_dir)) {
+            push_unique_capped(missing, prog, SET_CAP);
         }
     }
 }
 
 pub fn check_scripts(results: &mut Vec<CheckResult>) {
-    let jsonc = expand_home_path("~/.config/waybar/config.jsonc");
-    let plain = expand_home_path("~/.config/waybar/config");
+    let dir = join_path(&config_home(), "waybar");
+    let jsonc = join_path(&dir, "config.jsonc");
+    let plain = join_path(&dir, "config");
     let cfg = if file_exists(&jsonc) {
         jsonc
     } else if file_exists(&plain) {
@@ -133,11 +147,6 @@ pub fn check_scripts(results: &mut Vec<CheckResult>) {
         ));
         return;
     };
-    let config_dir = std::path::Path::new(&cfg)
-        .parent()
-        .map(|p| p.to_string_lossy().into_owned())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| ".".to_string());
 
     let content = match read_file(&cfg, CONFIG_MAX_BYTES) {
         Some(c) => c,
@@ -155,7 +164,7 @@ pub fn check_scripts(results: &mut Vec<CheckResult>) {
 
     let mut missing: Vec<String> = Vec::new();
     let mut checked = 0;
-    scan_strings(&content, &config_dir, &mut missing, &mut checked);
+    scan_commands(&content, &dir, &mut missing, &mut checked);
 
     if missing.is_empty() {
         let msg = if checked == 0 {
@@ -187,15 +196,21 @@ pub fn check_scripts(results: &mut Vec<CheckResult>) {
 mod tests {
     use super::*;
     use crate::unique_dir;
-    use std::io::Write;
+
+    fn scan(content: &str, config_dir: &str) -> (Vec<String>, i32) {
+        let mut missing = Vec::new();
+        let mut checked = 0;
+        scan_commands(content, config_dir, &mut missing, &mut checked);
+        (missing, checked)
+    }
 
     #[test]
-    fn edges_and_heuristic() {
-        assert_eq!(strip_script_edges("\"~/x\";"), "~/x");
-        assert_eq!(strip_script_edges("`scripts/a`"), "scripts/a");
+    fn local_script_heuristic() {
         assert!(looks_like_local_script("scripts/a"));
         assert!(looks_like_local_script("~/.config/waybar/scripts/b"));
+        assert!(looks_like_local_script("/home/u/bin/c"));
         assert!(!looks_like_local_script("waybar"));
+        assert!(!looks_like_local_script("/usr/bin/pavucontrol"));
         // URLs are opened, not executed from disk.
         assert!(!looks_like_local_script("https://example.com/scripts/x"));
         assert!(!looks_like_local_script(
@@ -204,37 +219,95 @@ mod tests {
     }
 
     #[test]
+    fn command_keys() {
+        for k in [
+            "exec",
+            "exec-if",
+            "on-click",
+            "on-click-right",
+            "on-scroll-up",
+        ] {
+            assert!(is_command_key(k), "{k}");
+        }
+        for k in [
+            "format",
+            "tooltip-format",
+            "interval",
+            "executable",
+            "return-type",
+        ] {
+            assert!(!is_command_key(k), "{k}");
+        }
+    }
+
+    #[test]
     fn scan_relative_scripts() {
         let dir = unique_dir("waybar");
         std::fs::create_dir_all(dir.join("scripts")).unwrap();
-        let mut f = std::fs::File::create(dir.join("scripts/present")).unwrap();
-        f.write_all(b"#!/bin/sh\n").unwrap();
+        std::fs::write(dir.join("scripts/present"), "#!/bin/sh\n").unwrap();
 
         // Two referenced scripts: one present, one missing.
-        let content = r#"{ "custom/a": { "exec": "scripts/present" }, "custom/b": { "exec": "scripts/missing" } }"#;
-        let mut missing = Vec::new();
-        let mut checked = 0;
-        scan_strings(content, dir.to_str().unwrap(), &mut missing, &mut checked);
+        let content = r#"{ "custom/a": { "exec": "scripts/present" }, "custom/b": { "exec": "./scripts/missing --flag" } }"#;
+        let (missing, checked) = scan(content, dir.to_str().unwrap());
         assert_eq!(checked, 2);
-        assert_eq!(missing, vec!["scripts/missing".to_string()]);
+        assert_eq!(missing, vec!["./scripts/missing".to_string()]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn only_the_program_of_command_fields_is_checked() {
+        // Arguments, data files, and non-command fields are not scripts.
+        let content = r#"{
+          "exec": "cat /home/u/.cache/weather.txt",
+          "exec-if": "test -f ~/.config/waybar/scripts/optional",
+          "tooltip-format": "see ~/.config/waybar/scripts/readme",
+          "format": "scripts/not-a-command",
+          "on-click": "GDK_BACKEND=x11 ~/.config/waybar/scripts/missing-click; notify-send done",
+          "on-scroll-up": "pamixer -i 5"
+        }"#;
+        let (missing, checked) = scan(content, "/nonexistent");
+        assert_eq!(checked, 1);
+        assert_eq!(
+            missing,
+            vec!["~/.config/waybar/scripts/missing-click".to_string()]
+        );
+    }
+
+    #[test]
+    fn env_vars_expand_like_sh() {
+        let _g = crate::ENV_MUTEX.lock().unwrap();
+        let dir = unique_dir("waybar_env");
+        std::fs::create_dir_all(dir.join("scripts")).unwrap();
+        std::fs::write(dir.join("scripts/bat"), "#!/bin/sh\n").unwrap();
+        std::env::set_var("OSD_TEST_WAYBAR", dir.to_str().unwrap());
+
+        let content = r#"{
+          "a": { "exec": "$OSD_TEST_WAYBAR/scripts/bat" },
+          "b": { "exec": "${OSD_TEST_WAYBAR}/scripts/bat" },
+          "c": { "exec": "${OSD_TEST_WAYBAR}/scripts/gone" },
+          "d": { "exec": "$(~/.config/waybar/scripts/bat)" },
+          "e": { "exec": "`~/.config/waybar/scripts/bat`" }
+        }"#;
+        let (missing, checked) = scan(content, "/nonexistent");
+        // $(...) and backticks are command substitutions: not resolvable.
+        assert_eq!(checked, 3);
+        assert_eq!(missing, vec!["${OSD_TEST_WAYBAR}/scripts/gone".to_string()]);
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn jsonc_comments_ignored() {
-        // Waybar configs are JSONC: script paths inside // and /* */ comments
-        // are not referenced. Comment markers inside strings are kept.
-        let content = r#"// "scripts/line-comment"
+        // Waybar configs are JSONC: commands inside // and /* */ comments are
+        // not referenced. Comment markers inside strings are kept.
+        let content = r#"// "exec": "scripts/line-comment"
 {
-  /* "scripts/block-comment"
-     still "scripts/block-comment-2" */
-  "exec": "scripts/real", // "scripts/trailing"
-  "c": "scripts/kept // not-a-comment", /**/ "b": "scripts/after-empty-block"
+  /* "exec": "scripts/block-comment",
+     "on-click": "scripts/block-comment-2" */
+  "exec": "scripts/real", // "exec": "scripts/trailing"
+  "on-click": "scripts/kept // not-a-comment", /**/ "exec-if": "scripts/after-empty-block"
 }
-/* unterminated "scripts/unterminated""#;
-        let mut missing = Vec::new();
-        let mut checked = 0;
-        scan_strings(content, "/nonexistent", &mut missing, &mut checked);
+/* unterminated "exec": "scripts/unterminated""#;
+        let (missing, checked) = scan(content, "/nonexistent");
         assert_eq!(
             missing,
             vec![
@@ -244,5 +317,23 @@ mod tests {
             ]
         );
         assert_eq!(checked, 3);
+    }
+
+    #[test]
+    fn escapes_decode() {
+        let tokens = tokenize(r#"{"a\"b": "c\\d", "e": "trailing\"#);
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Other,
+                Token::Str("a\"b".into()),
+                Token::Colon,
+                Token::Str("c\\d".into()),
+                Token::Other,
+                Token::Str("e".into()),
+                Token::Colon,
+                Token::Str("trailing\\".into()), // lone trailing backslash kept
+            ]
+        );
     }
 }

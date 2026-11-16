@@ -76,15 +76,15 @@ Output is colorized when writing to a terminal, and plain when piped or when
 | System   | `root-disk-space`         | Free space on `/` (WARN < 10 GB, FAIL < 2 GB)                         |
 | System   | `tmp-writable`            | `/tmp` is writable                                                   |
 | System   | `memory-info`             | `/proc/meminfo` (WARN when < 10% available)                          |
-| Services | `failed-system-services`  | Failed system units — sd-bus or `systemctl --failed`                 |
-| Services | `failed-user-services`    | Failed user units — sd-bus or `systemctl --user --failed` (SKIP without a user session) |
+| Services | `failed-system-services`  | Failed system units, via sd-bus or `systemctl --failed`              |
+| Services | `failed-user-services`    | Failed user units, via sd-bus or `systemctl --user --failed` (SKIP without a user session) |
 | Packages | `pacman-lock`             | `/var/lib/pacman/db.lck` present → FAIL                              |
 | Packages | `pacman-log`              | `/var/log/pacman.log` exists and is readable                         |
-| Packages | `orphan-packages`         | Orphans via libalpm or `pacman -Qdtq` (SKIP without pacman)          |
+| Packages | `orphan-packages`         | Orphans via libalpm or `pacman -Qdtq` (SKIP without pacman or when pacman fails) |
 | Desktop  | `wayland-session`         | `XDG_SESSION_TYPE=wayland`                                            |
 | Desktop  | `hyprland-socket`         | Hyprland IPC socket exists (SKIP when not running Hyprland)          |
-| Desktop  | `hyprland-binds`          | `exec` bind targets resolve in `PATH` (follows `source =` includes)  |
-| Desktop  | `waybar-scripts`          | Local scripts referenced by the Waybar config exist                  |
+| Desktop  | `hyprland-binds`          | The program of each `exec` bind resolves to an executable (follows `source =` includes, expands `$variables`) |
+| Desktop  | `waybar-scripts`          | Local scripts run by Waybar command fields (`exec`, `exec-*`, `on-*`) exist |
 
 ---
 

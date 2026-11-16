@@ -1,13 +1,18 @@
-//! Hyprland exec-bind validation (part of check_desktop.c). Walks
-//! ~/.config/hypr/hyprland.conf and every file it transitively `source =`s,
-//! resolving ~, $VAR, relative and glob includes, with cycle and depth guards.
+//! Hyprland exec-bind validation. Walks `$XDG_CONFIG_HOME/hypr/hyprland.conf`
+//! (default `~/.config/hypr/hyprland.conf`) and every file it transitively
+//! `source =`s, resolving Hyprland `$variables`, environment variables, `~`,
+//! relative and glob includes, with cycle and depth guards. Each exec bind's
+//! program (as `sh -c` would run it) must resolve to an executable.
 
 use crate::model::{CheckResult, CheckStatus};
 use crate::util::fs::{
-    expand_home_path, file_exists, glob_paths, is_executable_in_path, join_path, read_file,
+    config_home, display_path, expand_home_path, file_exists, glob_paths, is_executable_from,
+    join_path, read_file,
 };
-use crate::util::strings::push_unique_capped;
+use crate::util::shell::command_word;
+use crate::util::strings::{expand_env_vars, push_unique_capped};
 use std::collections::HashMap;
+use std::path::Path;
 
 const GROUP: &str = "Desktop";
 pub const MAX_INCLUDE_DEPTH: i32 = 32;
@@ -25,6 +30,11 @@ pub struct BindScan {
     /// Memoized PATH-resolution results, so a command bound many times only
     /// walks PATH once.
     resolved: HashMap<String, bool>,
+    /// Hyprland `$name = value` variables defined so far, in config order.
+    vars: HashMap<String, String>,
+    /// Directory relative commands resolve against: Hyprland runs exec binds
+    /// from its own working directory, which is the user's home.
+    home: String,
 }
 
 impl BindScan {
@@ -37,18 +47,49 @@ impl BindScan {
         if let Some(&known) = self.resolved.get(tok) {
             return known;
         }
-        let ok = is_executable_in_path(&expand_home_path(tok));
+        let ok = is_executable_from(&expand_home_path(tok), &self.home);
         self.resolved.insert(tok.to_string(), ok);
         ok
     }
-}
 
-fn first_token(s: &str) -> String {
-    s.trim_start_matches([' ', '\t'])
-        .split([' ', '\t'])
-        .next()
-        .unwrap_or("")
-        .to_string()
+    /// Replace each `$name` that is a defined Hyprland variable with its value
+    /// (the longest identifier after '$' is the name). Anything else, such as
+    /// environment variables, is left for the shell-style expansion.
+    fn expand_vars(&self, input: &str) -> String {
+        let mut out = String::with_capacity(input.len());
+        let mut rest = input;
+        while let Some(i) = rest.find('$') {
+            out.push_str(&rest[..i]);
+            let after = &rest[i + 1..];
+            let len = after
+                .find(|c: char| !(c == '_' || c.is_ascii_alphanumeric()))
+                .unwrap_or(after.len());
+            match self.vars.get(&after[..len]) {
+                Some(value) if len > 0 => out.push_str(value),
+                _ => out.push_str(&rest[i..i + 1 + len]),
+            }
+            rest = &after[len..];
+        }
+        out.push_str(rest);
+        out
+    }
+
+    /// Record a `$name = value` definition. Returns false if `line` is not one.
+    fn define_var(&mut self, line: &str) -> bool {
+        let Some(def) = line.strip_prefix('$') else {
+            return false;
+        };
+        let Some((name, value)) = def.split_once('=') else {
+            return false;
+        };
+        let name = name.trim();
+        if name.is_empty() || !name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric()) {
+            return false;
+        }
+        let value = self.expand_vars(value.trim());
+        self.vars.insert(name.to_string(), value);
+        true
+    }
 }
 
 fn strip_quotes(s: &str) -> String {
@@ -96,41 +137,6 @@ fn parse_source_value(line: &str) -> Option<String> {
     Some(strip_quotes(line[eq + 1..].trim()))
 }
 
-/// Expand $VAR / ${VAR} from the environment; undefined -> empty, lone '$' kept.
-fn expand_env_vars(input: &str) -> String {
-    let chars: Vec<char> = input.chars().collect();
-    let mut out = String::new();
-    let mut i = 0;
-    while i < chars.len() {
-        if chars[i] != '$' {
-            out.push(chars[i]);
-            i += 1;
-            continue;
-        }
-        i += 1;
-        let braced = i < chars.len() && chars[i] == '{';
-        if braced {
-            i += 1;
-        }
-        let mut name = String::new();
-        while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
-            name.push(chars[i]);
-            i += 1;
-        }
-        if braced && i < chars.len() && chars[i] == '}' {
-            i += 1;
-        }
-        if name.is_empty() {
-            out.push('$');
-            continue;
-        }
-        if let Ok(val) = std::env::var(&name) {
-            out.push_str(&val);
-        }
-    }
-    out
-}
-
 fn process_bind_line(line: &str, scan: &mut BindScan) {
     if !line.starts_with("bind") {
         return;
@@ -165,7 +171,13 @@ fn process_bind_line(line: &str, scan: &mut BindScan) {
             None => return,
         }
     }
-    let tok = strip_quotes(&first_token(args));
+    // Hyprland substitutes its $variables, then runs the result via sh -c,
+    // which expands environment variables and finds the program word.
+    let cmd = expand_env_vars(&scan.expand_vars(args));
+    let tok = match command_word(&cmd) {
+        Some(t) => t.to_string(),
+        None => return,
+    };
     if !token_is_checkable(&tok) {
         return;
     }
@@ -182,7 +194,7 @@ fn scan_source(
     visited: &mut Vec<String>,
     depth: i32,
 ) {
-    let expanded = expand_env_vars(value);
+    let expanded = expand_env_vars(&scan.expand_vars(value));
     let pattern = if expanded.starts_with('~') {
         expand_home_path(&expanded)
     } else if expanded.starts_with('/') {
@@ -216,7 +228,10 @@ fn scan_config_file(path: &str, scan: &mut BindScan, visited: &mut Vec<String>, 
     if depth == 0 {
         scan.root_read = true;
     }
-    let base_dir = canon
+    // Relative includes resolve against the directory of the path as opened,
+    // like Hyprland does, not of its symlink target: a hyprland.conf symlinked
+    // into a dotfiles repo still sources siblings from ~/.config/hypr.
+    let base_dir = Path::new(path)
         .parent()
         .map(|p| p.to_string_lossy().into_owned())
         .filter(|s| !s.is_empty())
@@ -231,26 +246,32 @@ fn scan_config_file(path: &str, scan: &mut BindScan, visited: &mut Vec<String>, 
             scan_source(&value, &base_dir, scan, visited, depth);
             continue;
         }
+        if scan.define_var(line) {
+            continue;
+        }
         process_bind_line(line, scan);
     }
 }
 
 pub fn scan_binds(root_path: &str) -> BindScan {
-    let mut scan = BindScan::default();
+    let mut scan = BindScan {
+        home: std::env::var("HOME").unwrap_or_else(|_| "/".to_string()),
+        ..BindScan::default()
+    };
     let mut visited: Vec<String> = Vec::new();
     scan_config_file(root_path, &mut scan, &mut visited, 0);
     scan
 }
 
 pub fn check_binds(results: &mut Vec<CheckResult>) {
-    let cfg = expand_home_path("~/.config/hypr/hyprland.conf");
+    let cfg = join_path(&config_home(), "hypr/hyprland.conf");
     if !file_exists(&cfg) {
         results.push(CheckResult::new(
             "hyprland-binds",
             GROUP,
             CheckStatus::Skip,
             "Hyprland config not found",
-            "~/.config/hypr/hyprland.conf",
+            display_path(&cfg),
         ));
         return;
     }
@@ -261,7 +282,7 @@ pub fn check_binds(results: &mut Vec<CheckResult>) {
             GROUP,
             CheckStatus::Skip,
             "Could not read Hyprland config",
-            "~/.config/hypr/hyprland.conf",
+            display_path(&cfg),
         ));
         return;
     }
@@ -333,6 +354,114 @@ mod tests {
         assert_eq!(scan.checked, 2);
         assert_eq!(scan.missing, vec!["osd_bogus_rules".to_string()]);
         assert!(scan.root_read);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn shell_syntax_in_exec_binds() {
+        // exec binds run via sh -c: env assignments are skipped, and builtins
+        // or operators are not programs on PATH.
+        let dir = unique_dir("shell");
+        let root = dir.join("hyprland.conf");
+        write(
+            &root,
+            "bind = SUPER, A, exec, GDK_BACKEND=x11 osd_bogus_env_prefixed\n\
+             bind = SUPER, B, exec, cd ~ && osd_bogus_after_cd\n\
+             bind = SUPER, C, exec, [ -f x ] && osd_bogus_after_test\n\
+             bind = SUPER, D, exec, sh -c 'true'; osd_bogus_second\n\
+             bind = SUPER, E, exec, osd_bogus_semicolon; true\n",
+        );
+        let scan = scan_binds(root.to_str().unwrap());
+        assert_eq!(scan.checked, 3);
+        assert_eq!(
+            scan.missing,
+            vec![
+                "osd_bogus_env_prefixed".to_string(),
+                "osd_bogus_semicolon".to_string(),
+            ]
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn hyprland_variables_expand() {
+        // $name = value definitions apply to later exec binds and source paths;
+        // the longest identifier is the name ($term vs $terminal).
+        let dir = unique_dir("vars");
+        std::fs::create_dir_all(dir.join("conf")).unwrap();
+        write(
+            &dir.join("hyprland.conf"),
+            &format!(
+                "$term = osd_bogus_term\n\
+                 $terminal = sh\n\
+                 $cfg = {}/conf\n\
+                 source = $cfg/binds.conf\n\
+                 bind = SUPER, A, exec, $terminal -c true\n\
+                 bind = SUPER, B, exec, $term --hold\n\
+                 bind = SUPER, C, exec, $undefined_var\n",
+                dir.display()
+            ),
+        );
+        write(
+            &dir.join("conf/binds.conf"),
+            "bind = SUPER, D, exec, osd_bogus_via_var_include\n",
+        );
+        let scan = scan_binds(dir.join("hyprland.conf").to_str().unwrap());
+        assert_eq!(scan.checked, 3);
+        assert_eq!(
+            scan.missing,
+            vec![
+                "osd_bogus_via_var_include".to_string(),
+                "osd_bogus_term".to_string(),
+            ]
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn relative_include_from_symlinked_root() {
+        // A hyprland.conf symlinked into a dotfiles repo sources siblings of
+        // the symlink (as Hyprland does), not of its target.
+        let dir = unique_dir("symlink");
+        std::fs::create_dir_all(dir.join("dots")).unwrap();
+        std::fs::create_dir_all(dir.join("hypr")).unwrap();
+        write(&dir.join("dots/hyprland.conf"), "source = binds.conf\n");
+        std::os::unix::fs::symlink(
+            dir.join("dots/hyprland.conf"),
+            dir.join("hypr/hyprland.conf"),
+        )
+        .unwrap();
+        write(
+            &dir.join("hypr/binds.conf"),
+            "bind = SUPER, A, exec, osd_bogus_beside_symlink\n",
+        );
+        let scan = scan_binds(dir.join("hypr/hyprland.conf").to_str().unwrap());
+        assert_eq!(scan.checked, 1);
+        assert!(has_missing(&scan, "osd_bogus_beside_symlink"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn commands_resolve_from_home() {
+        // Relative commands resolve against Hyprland's working directory (the
+        // home directory), and directories are not executables.
+        use std::os::unix::fs::PermissionsExt;
+        let _g = crate::ENV_MUTEX.lock().unwrap();
+        let dir = unique_dir("home_cmds");
+        std::env::set_var("HOME", &dir);
+        std::fs::create_dir_all(dir.join("bin")).unwrap();
+        let script = dir.join("bin/launch.sh");
+        write(&script, "#!/bin/sh\n");
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        write(
+            &dir.join("hyprland.conf"),
+            "bind = SUPER, A, exec, bin/launch.sh\n\
+             bind = SUPER, B, exec, ~/bin/launch.sh\n\
+             bind = SUPER, C, exec, ~/bin\n",
+        );
+        let scan = scan_binds(dir.join("hyprland.conf").to_str().unwrap());
+        assert_eq!(scan.checked, 3);
+        assert_eq!(scan.missing, vec!["~/bin".to_string()]);
         std::fs::remove_dir_all(&dir).ok();
     }
 
