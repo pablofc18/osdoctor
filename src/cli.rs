@@ -2,6 +2,7 @@
 //! exit code (0/1/2 from results, 3 for usage errors).
 
 use crate::checks;
+use crate::config::Config;
 use crate::model::{exit_code, summarize, CheckResult, VERSION};
 use crate::output::{self, write_stderr, write_stdout};
 
@@ -119,13 +120,14 @@ pub fn run(args: &[String]) -> i32 {
         return usage_error("no command given", true);
     };
 
+    let config = Config::default();
     let mut results: Vec<CheckResult> = Vec::new();
     match cmd {
-        Command::System => checks::run_system(&mut results),
-        Command::Services => checks::run_services(&mut results),
-        Command::Packages => checks::run_packages(&mut results),
-        Command::Desktop => checks::run_desktop(&mut results),
-        Command::Scan => checks::run_all(&mut results),
+        Command::System => checks::run_system(&mut results, &config),
+        Command::Services => checks::run_services(&mut results, &config),
+        Command::Packages => checks::run_packages(&mut results, &config),
+        Command::Desktop => checks::run_desktop(&mut results, &config),
+        Command::Scan => checks::run_all(&mut results, &config),
         Command::Version | Command::Help => unreachable!(),
     }
 

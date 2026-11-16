@@ -1,6 +1,7 @@
 //! System checks: kernel, root disk space, /tmp writability, memory.
 //! Uses libc uname/statvfs and /proc/meminfo; never shells out.
 
+use crate::config::{Config, Thresholds};
 use crate::model::{CheckResult, CheckStatus};
 use crate::util::fs::path_writable;
 use std::ffi::CStr;
@@ -44,7 +45,23 @@ fn parse_meminfo_line(line: &str, key: &str) -> Option<u64> {
     }
 }
 
-fn run_memory(results: &mut Vec<CheckResult>) {
+/// Disk status for `free_bytes` free on /. A threshold of 0 never triggers.
+fn disk_status(free_bytes: u64, t: &Thresholds) -> CheckStatus {
+    if free_bytes < t.disk_fail_gb.saturating_mul(GIB) {
+        CheckStatus::Fail
+    } else if free_bytes < t.disk_warn_gb.saturating_mul(GIB) {
+        CheckStatus::Warn
+    } else {
+        CheckStatus::Ok
+    }
+}
+
+/// True when available memory is below the configured percentage of total.
+fn memory_low(avail_kb: u64, total_kb: u64, t: &Thresholds) -> bool {
+    avail_kb.saturating_mul(100) < total_kb.saturating_mul(t.memory_warn_percent)
+}
+
+fn run_memory(results: &mut Vec<CheckResult>, t: &Thresholds) {
     let content = match std::fs::read_to_string("/proc/meminfo") {
         Ok(c) => c,
         Err(_) => {
@@ -86,7 +103,7 @@ fn run_memory(results: &mut Vec<CheckResult>) {
     let total_mb = total_kb / 1024;
     let avail = avail_kb.unwrap_or(0);
     let avail_mb = avail / 1024;
-    if avail_kb.is_some() && total_kb > 0 && avail * 10 < total_kb {
+    if avail_kb.is_some() && total_kb > 0 && memory_low(avail, total_kb, t) {
         results.push(CheckResult::new(
             "memory-info",
             GROUP,
@@ -105,7 +122,22 @@ fn run_memory(results: &mut Vec<CheckResult>) {
     }
 }
 
-pub fn run(results: &mut Vec<CheckResult>) {
+pub fn run(results: &mut Vec<CheckResult>, cfg: &Config) {
+    if cfg.enabled("kernel-version") {
+        run_kernel(results);
+    }
+    if cfg.enabled("root-disk-space") {
+        run_disk(results, &cfg.thresholds);
+    }
+    if cfg.enabled("tmp-writable") {
+        run_tmp(results);
+    }
+    if cfg.enabled("memory-info") {
+        run_memory(results, &cfg.thresholds);
+    }
+}
+
+fn run_kernel(results: &mut Vec<CheckResult>) {
     match uname() {
         Some((sysname, release, version)) => results.push(CheckResult::new(
             "kernel-version",
@@ -122,16 +154,12 @@ pub fn run(results: &mut Vec<CheckResult>) {
             "",
         )),
     }
+}
 
+fn run_disk(results: &mut Vec<CheckResult>, t: &Thresholds) {
     match statvfs_free_bytes("/") {
         Some(free_bytes) => {
-            let status = if free_bytes < 2 * GIB {
-                CheckStatus::Fail
-            } else if free_bytes < 10 * GIB {
-                CheckStatus::Warn
-            } else {
-                CheckStatus::Ok
-            };
+            let status = disk_status(free_bytes, t);
             results.push(CheckResult::new(
                 "root-disk-space",
                 GROUP,
@@ -148,7 +176,9 @@ pub fn run(results: &mut Vec<CheckResult>) {
             "",
         )),
     }
+}
 
+fn run_tmp(results: &mut Vec<CheckResult>) {
     if path_writable("/tmp") {
         results.push(CheckResult::new(
             "tmp-writable",
@@ -166,8 +196,6 @@ pub fn run(results: &mut Vec<CheckResult>) {
             "",
         ));
     }
-
-    run_memory(results);
 }
 
 #[cfg(test)]
@@ -191,9 +219,45 @@ mod tests {
     }
 
     #[test]
+    fn disk_status_uses_thresholds() {
+        let t = Thresholds::default();
+        assert_eq!(disk_status(GIB, &t), CheckStatus::Fail);
+        assert_eq!(disk_status(2 * GIB, &t), CheckStatus::Warn);
+        assert_eq!(disk_status(10 * GIB, &t), CheckStatus::Ok);
+        let t = Thresholds {
+            disk_warn_gb: 0,
+            disk_fail_gb: 0,
+            ..t
+        };
+        assert_eq!(disk_status(0, &t), CheckStatus::Ok); // 0 disables both
+    }
+
+    #[test]
+    fn huge_disk_threshold_does_not_overflow() {
+        let t = Thresholds {
+            disk_warn_gb: u64::MAX,
+            disk_fail_gb: u64::MAX,
+            ..Thresholds::default()
+        };
+        assert_eq!(disk_status(500 * GIB, &t), CheckStatus::Fail);
+    }
+
+    #[test]
+    fn memory_low_uses_percent() {
+        let t = Thresholds::default(); // 10%
+        assert!(memory_low(9, 100, &t));
+        assert!(!memory_low(10, 100, &t));
+        let t = Thresholds {
+            memory_warn_percent: 0,
+            ..t
+        };
+        assert!(!memory_low(0, 100, &t));
+    }
+
+    #[test]
     fn run_emits_four_system_checks() {
         let mut results = Vec::new();
-        run(&mut results);
+        run(&mut results, &Config::default());
         let ids: Vec<&str> = results.iter().map(|r| r.id).collect();
         assert_eq!(
             ids,
