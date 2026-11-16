@@ -47,6 +47,7 @@ Commands:
 
 Options:
   --json          Output results as JSON
+  --explain       Explain each warning and failure
   --strict        Treat warnings as failures for the exit code
   --config PATH   Read configuration from PATH
   -h, --help      Show this help
@@ -87,6 +88,7 @@ fn output_failed(e: std::io::Error) -> i32 {
 
 pub fn run(args: &[String]) -> i32 {
     let mut json = false;
+    let mut explain = false;
     let mut strict = false;
     let mut want_help = false;
     let mut want_version = false;
@@ -106,6 +108,7 @@ pub fn run(args: &[String]) -> i32 {
                 }
             }
             "--json" => json = true,
+            "--explain" => explain = true,
             "--strict" => strict = true,
             "-h" | "--help" => want_help = true,
             "-V" | "--version" => want_version = true,
@@ -155,9 +158,9 @@ pub fn run(args: &[String]) -> i32 {
     config.apply_overrides(&mut results);
 
     let printed = if json {
-        output::json::print_json(&results)
+        output::json::print_json(&results, explain)
     } else {
-        output::text::print_text(&results)
+        output::text::print_text(&results, explain)
     };
     match printed {
         Ok(()) => exit_code(summarize(&results), strict),
