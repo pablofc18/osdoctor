@@ -1,4 +1,4 @@
-//! Human-readable grouped report (replaces output_text.c). `render_text` is
+//! Human-readable grouped report. `render_text` is
 //! pure (color is a parameter) so it can be tested; `print_text` decides color
 //! from the TTY + NO_COLOR and writes to stdout.
 
@@ -61,8 +61,8 @@ pub fn render_text(results: &[CheckResult], color: bool) -> String {
     out
 }
 
-pub fn print_text(results: &[CheckResult]) {
-    print!("{}", render_text(results, use_color()));
+pub fn print_text(results: &[CheckResult]) -> std::io::Result<()> {
+    super::write_stdout(&render_text(results, use_color()))
 }
 
 fn use_color() -> bool {

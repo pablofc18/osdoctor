@@ -1,4 +1,4 @@
-//! Machine-readable JSON report (replaces output_json.c). `render_json` builds
+//! Machine-readable JSON report. `render_json` builds
 //! the exact byte sequence; `print_json` writes it to stdout.
 
 use crate::model::{overall_status, summarize, CheckResult};
@@ -58,8 +58,8 @@ pub fn render_json(results: &[CheckResult]) -> String {
     out
 }
 
-pub fn print_json(results: &[CheckResult]) {
-    print!("{}", render_json(results));
+pub fn print_json(results: &[CheckResult]) -> std::io::Result<()> {
+    super::write_stdout(&render_json(results))
 }
 
 #[cfg(test)]

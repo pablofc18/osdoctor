@@ -1,9 +1,9 @@
-//! Argument parsing and command dispatch (replaces cli.c). Returns the process
+//! Argument parsing and command dispatch. Returns the process
 //! exit code (0/1/2 from results, 3 for usage errors).
 
 use crate::checks;
 use crate::model::{exit_code, summarize, CheckResult, VERSION};
-use crate::output;
+use crate::output::{self, write_stderr, write_stdout};
 
 enum Command {
     Scan,
@@ -59,6 +59,27 @@ Exit codes:
     )
 }
 
+/// Exit code for invalid usage or an internal error.
+const EXIT_USAGE: i32 = 3;
+
+/// Report a usage error, followed by the usage text when `with_usage`.
+fn usage_error(msg: &str, with_usage: bool) -> i32 {
+    let usage = if with_usage {
+        format!("\n{}", usage())
+    } else {
+        String::new()
+    };
+    write_stderr(&format!("osdoctor: {msg}\n{usage}"));
+    EXIT_USAGE
+}
+
+/// Map a failed stdout write to the internal-error exit code. A closed pipe
+/// is already treated as success by write_stdout.
+fn output_failed(e: std::io::Error) -> i32 {
+    write_stderr(&format!("osdoctor: cannot write output: {e}\n"));
+    EXIT_USAGE
+}
+
 pub fn run(args: &[String]) -> i32 {
     let mut json = false;
     let mut strict = false;
@@ -73,42 +94,29 @@ pub fn run(args: &[String]) -> i32 {
             "-h" | "--help" => want_help = true,
             "-V" | "--version" => want_version = true,
             a if a.starts_with('-') => {
-                eprintln!("osdoctor: unknown option '{a}'\n");
-                eprint!("{}", usage());
-                return 3;
+                return usage_error(&format!("unknown option '{a}'"), true);
             }
             a => {
                 if cmd.is_some() {
-                    eprintln!("osdoctor: unexpected argument '{a}'");
-                    return 3;
+                    return usage_error(&format!("unexpected argument '{a}'"), false);
                 }
                 match parse_command(a) {
                     Some(c) => cmd = Some(c),
-                    None => {
-                        eprintln!("osdoctor: unknown command '{a}'\n");
-                        eprint!("{}", usage());
-                        return 3;
-                    }
+                    None => return usage_error(&format!("unknown command '{a}'"), true),
                 }
             }
         }
     }
 
     if want_help || matches!(cmd, Some(Command::Help)) {
-        print!("{}", usage());
-        return 0;
+        return write_stdout(&usage()).map_or_else(output_failed, |()| 0);
     }
     if want_version || matches!(cmd, Some(Command::Version)) {
-        println!("osdoctor {VERSION}");
-        return 0;
+        let line = format!("osdoctor {VERSION}\n");
+        return write_stdout(&line).map_or_else(output_failed, |()| 0);
     }
-    let cmd = match cmd {
-        Some(c) => c,
-        None => {
-            eprintln!("osdoctor: no command given\n");
-            eprint!("{}", usage());
-            return 3;
-        }
+    let Some(cmd) = cmd else {
+        return usage_error("no command given", true);
     };
 
     let mut results: Vec<CheckResult> = Vec::new();
@@ -121,13 +129,15 @@ pub fn run(args: &[String]) -> i32 {
         Command::Version | Command::Help => unreachable!(),
     }
 
-    if json {
-        output::json::print_json(&results);
+    let printed = if json {
+        output::json::print_json(&results)
     } else {
-        output::text::print_text(&results);
+        output::text::print_text(&results)
+    };
+    match printed {
+        Ok(()) => exit_code(summarize(&results), strict),
+        Err(e) => output_failed(e),
     }
-
-    exit_code(summarize(&results), strict)
 }
 
 #[cfg(test)]
