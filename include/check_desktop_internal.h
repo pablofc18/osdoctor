@@ -5,6 +5,7 @@
 #ifndef OSDOCTOR_CHECK_DESKTOP_INTERNAL_H
 #define OSDOCTOR_CHECK_DESKTOP_INTERNAL_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 /* Maximum `source =` include nesting depth before recursion is cut off. */
@@ -25,6 +26,8 @@ typedef struct {
 typedef struct {
     strset_t missing; /* checkable commands that did not resolve */
     int checked;      /* number of checkable commands seen */
+    bool root_read;   /* the root config itself was read; false means the scan
+                       * saw nothing and must not be reported as resolved */
 } hypr_bind_scan_t;
 
 /*
@@ -35,5 +38,15 @@ typedef struct {
  * the caller.
  */
 void hypr_scan_binds(const char *root_path, hypr_bind_scan_t *out);
+
+/*
+ * Scan Waybar config text for references to local scripts: every token of
+ * every double-quoted string that looks like a local script path is counted in
+ * *checked and, when it does not exist (relative paths resolve against
+ * `config_dir`), added to `missing`. JSONC `//` and block comments are
+ * skipped. `missing` and `*checked` must be zeroed by the caller.
+ */
+void waybar_scan_scripts(const char *content, const char *config_dir, strset_t *missing,
+                         int *checked);
 
 #endif /* OSDOCTOR_CHECK_DESKTOP_INTERNAL_H */

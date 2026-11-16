@@ -222,6 +222,50 @@ static void test_bindd_description_field(void) {
     CHECK(!has_missing(&scan, "sh"));
 }
 
+static void test_exec_rules_prefix_skipped(void) {
+    /* `exec, [rules] cmd` launches cmd with window rules; the command is the
+     * first token after the closing bracket, not "[workspace". */
+    char dir[256];
+    make_tmpdir(dir, sizeof dir);
+    char root[512];
+    snprintf(root, sizeof root, "%s/hyprland.conf", dir);
+    write_file(root, "bind = SUPER, A, exec, [workspace 2 silent] osd_bogus_rules\n"
+                     "bind = SUPER, B, exec, [float; size 50% 50%]sh -c true\n"
+                     "bind = SUPER, C, exec, [workspace 3 silent\n");
+
+    hypr_bind_scan_t scan = {0};
+    hypr_scan_binds(root, &scan);
+
+    CHECK(scan.checked == 2);
+    CHECK(scan.missing.len == 1);
+    CHECK(has_missing(&scan, "osd_bogus_rules"));
+    CHECK(scan.root_read);
+}
+
+static void test_unreadable_root_is_flagged(void) {
+    /* A root config that exists but cannot be read (here: a directory, which
+     * stays unreadable even as root) must not look like a clean scan of zero
+     * binds. */
+    char dir[256];
+    make_tmpdir(dir, sizeof dir);
+    char root[512];
+    snprintf(root, sizeof root, "%s/hyprland.conf", dir);
+    mkdir(root, 0700);
+
+    hypr_bind_scan_t scan = {0};
+    hypr_scan_binds(root, &scan);
+    CHECK(!scan.root_read);
+    CHECK(scan.checked == 0);
+
+    /* An empty but readable root is a clean scan. */
+    char empty[512];
+    snprintf(empty, sizeof empty, "%s/empty.conf", dir);
+    write_file(empty, "");
+    hypr_bind_scan_t ok = {0};
+    hypr_scan_binds(empty, &ok);
+    CHECK(ok.root_read);
+}
+
 static void test_missing_source_skipped(void) {
     char dir[256];
     make_tmpdir(dir, sizeof dir);
@@ -248,6 +292,8 @@ int main(void) {
     test_depth_guard();
     test_bindd_description_field();
     test_missing_source_skipped();
+    test_exec_rules_prefix_skipped();
+    test_unreadable_root_is_flagged();
     printf("  %d checks, %d failures\n", g_checks, g_failures);
     return (g_failures == 0) ? 0 : 1;
 }
