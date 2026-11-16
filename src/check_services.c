@@ -97,10 +97,27 @@ static int count_units(const char *out, char *detail, size_t detail_size) {
 }
 
 /*
- * systemctl backend: parse `systemctl [--user] --failed`. System scope ignores
- * the exit status (an empty list is the normal "nothing failed" case); a
- * non-zero user-scope exit means there is no usable user manager/bus.
+ * Turn a systemctl (exit status, stdout) pair into a query result. A non-zero
+ * (or unknown, -1) exit means the manager could not be queried: for the user
+ * scope there is no user session, for the system scope no reachable system
+ * bus. Both map to NO_SESSION (a SKIP) rather than a false "no failed
+ * services" OK. `systemctl --failed` exits 0 even when units have failed, so a
+ * clean exit is parsed for the unit list.
  */
+svc_query_status_t svc_classify_systemctl(int exit_status, const char *out, int *count,
+                                          char *detail, size_t detail_size) {
+    *count = 0;
+    if (detail_size > 0) {
+        detail[0] = '\0';
+    }
+    if (exit_status != 0) {
+        return SVC_QUERY_NO_SESSION;
+    }
+    *count = count_units(out, detail, detail_size);
+    return SVC_QUERY_OK;
+}
+
+/* systemctl backend: run and classify `systemctl [--user] --failed`. */
 static svc_query_status_t svc_query_systemctl(svc_scope_t scope, int *count, char *detail,
                                               size_t detail_size) {
     *count = 0;
@@ -117,12 +134,7 @@ static svc_query_status_t svc_query_systemctl(svc_scope_t scope, int *count, cha
     char out[8192];
     int status = 0;
     run_capture(cmd, out, sizeof out, &status);
-
-    if (scope == SVC_SCOPE_USER && status != 0) {
-        return SVC_QUERY_NO_SESSION;
-    }
-    *count = count_units(out, detail, detail_size);
-    return SVC_QUERY_OK;
+    return svc_classify_systemctl(status, out, count, detail, detail_size);
 }
 
 /*

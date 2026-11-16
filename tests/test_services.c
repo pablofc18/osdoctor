@@ -1,7 +1,8 @@
 /*
  * test_services.c - unit tests for the backend-agnostic Services logic:
- * the bounded detail accumulator (svc_detail_append) and the query-status ->
- * check-result classifier (svc_emit). The actual systemctl / sd-bus I/O is
+ * the bounded detail accumulator (svc_detail_append), the systemctl output
+ * classifier (svc_classify_systemctl) and the query-status -> check-result
+ * mapper (svc_emit). The actual systemctl / sd-bus I/O is
  * exercised at the integration level by the scan smoke test.
  */
 #include "check_services_internal.h"
@@ -134,7 +135,38 @@ static void test_emit_no_session(void) {
     CHECK(last(&r)->status == CHECK_SKIP);
     CHECK_STR(last(&r)->message, "No systemd user session available");
 
+    CHECK(svc_emit(&r, SVC_SCOPE_SYSTEM, SVC_QUERY_NO_SESSION, 0, "") == 0);
+    CHECK(last(&r)->status == CHECK_SKIP);
+    CHECK_STR(last(&r)->message, "No system bus available");
+
     results_free(&r);
+}
+
+/* ---- svc_classify_systemctl ---- */
+
+static void test_classify_nonzero_exit_is_no_session(void) {
+    /* A non-zero systemctl exit means the manager/bus could not be queried (no
+     * user session, or no reachable system bus). Either is a SKIP, not a false
+     * "no failed services" OK - including the system scope. */
+    char detail[64];
+    int count = 99;
+    CHECK(svc_classify_systemctl(1, "", &count, detail, sizeof detail) == SVC_QUERY_NO_SESSION);
+    CHECK(count == 0);
+    CHECK_STR(detail, "");
+
+    count = 99;
+    CHECK(svc_classify_systemctl(-1, "a.service x y\n", &count, detail, sizeof detail) ==
+          SVC_QUERY_NO_SESSION);
+    CHECK(count == 0);
+}
+
+static void test_classify_zero_exit_counts_units(void) {
+    char detail[64];
+    int count = 0;
+    CHECK(svc_classify_systemctl(0, "a.service loaded failed\n\nb.service x y\n", &count, detail,
+                                 sizeof detail) == SVC_QUERY_OK);
+    CHECK(count == 2);
+    CHECK_STR(detail, "a.service, b.service");
 }
 
 static void test_emit_unavailable(void) {
@@ -161,6 +193,8 @@ int main(void) {
     test_emit_ok_failed_counts();
     test_emit_no_session();
     test_emit_unavailable();
+    test_classify_nonzero_exit_is_no_session();
+    test_classify_zero_exit_counts_units();
     printf("  %d checks, %d failures\n", g_checks, g_failures);
     return (g_failures == 0) ? 0 : 1;
 }

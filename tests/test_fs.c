@@ -121,6 +121,10 @@ static void test_file_predicates(void) {
         free(content);
     }
 
+    /* A path that opens but cannot be read (a directory) is a read error, not
+     * an empty file. */
+    CHECK(fs_read_file(dir, 1024, NULL) == NULL);
+
     /* Clean up. */
     unlink(file);
     rmdir(dir);

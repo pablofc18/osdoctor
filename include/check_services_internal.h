@@ -36,6 +36,15 @@ void svc_detail_append(char *detail, size_t detail_size, size_t *used, const cha
 int svc_emit(check_result_list_t *r, svc_scope_t scope, svc_query_status_t status, int count,
              const char *detail);
 
+/*
+ * Classify the outcome of `systemctl [--user] --failed`. A non-zero (or -1,
+ * unknown) `exit_status` yields SVC_QUERY_NO_SESSION for either scope; a zero
+ * exit yields SVC_QUERY_OK with *count set to the number of non-empty lines in
+ * `out` and `detail` filled with their first tokens (the unit names).
+ */
+svc_query_status_t svc_classify_systemctl(int exit_status, const char *out, int *count,
+                                          char *detail, size_t detail_size);
+
 #ifdef OSDOCTOR_HAVE_LIBSYSTEMD
 /*
  * Query failed units for `scope` over sd-bus. Fills *count (all failed units)

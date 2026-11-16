@@ -69,7 +69,7 @@ ALL_SRCS = $(SRC_DIR)/main.c $(LIB_SRCS)
 OBJS     = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(ALL_SRCS))
 LIB_OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(LIB_SRCS))
 
-TESTS     = test_string test_fs test_hypr test_services test_packages
+TESTS     = test_string test_fs test_hypr test_waybar test_services test_packages test_output
 TEST_BINS = $(addprefix $(OBJ_DIR)/,$(TESTS))
 
 HEADERS = $(wildcard include/*.h)
@@ -90,12 +90,14 @@ $(OBJ_DIR):
 
 # ---- tests ----
 
-test: $(TEST_BINS)
+test: $(TEST_BINS) $(BIN)
 	@fail=0; \
 	for t in $(TEST_BINS); do \
 		echo "== running $$t =="; \
 		./$$t || fail=1; \
 	done; \
+	echo "== running tests/test_cli.sh =="; \
+	./$(TEST_DIR)/test_cli.sh ./$(BIN) || fail=1; \
 	if [ $$fail -ne 0 ]; then echo "TESTS FAILED"; exit 1; fi; \
 	echo "ALL TESTS PASSED"
 
@@ -108,11 +110,17 @@ $(OBJ_DIR)/test_fs: $(TEST_DIR)/test_fs.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR)
 $(OBJ_DIR)/test_hypr: $(TEST_DIR)/test_hypr.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_hypr.c $(LIB_OBJS) $(LDFLAGS) $(LDLIBS)
 
+$(OBJ_DIR)/test_waybar: $(TEST_DIR)/test_waybar.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_waybar.c $(LIB_OBJS) $(LDFLAGS) $(LDLIBS)
+
 $(OBJ_DIR)/test_services: $(TEST_DIR)/test_services.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_services.c $(LIB_OBJS) $(LDFLAGS) $(LDLIBS)
 
 $(OBJ_DIR)/test_packages: $(TEST_DIR)/test_packages.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_packages.c $(LIB_OBJS) $(LDFLAGS) $(LDLIBS)
+
+$(OBJ_DIR)/test_output: $(TEST_DIR)/test_output.c $(LIB_OBJS) $(HEADERS) | $(OBJ_DIR)
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $(TEST_DIR)/test_output.c $(LIB_OBJS) $(LDFLAGS) $(LDLIBS)
 
 # ---- install / uninstall ----
 

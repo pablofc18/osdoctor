@@ -8,9 +8,14 @@ Omarchy-style setups. It inspects the system, the package manager, systemd
 services, and your desktop session, then prints a clean, grouped report (or
 JSON) with a meaningful exit code you can use in scripts.
 
-[![CI](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml/badge.svg)](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml)
+[![CI](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml?query=branch%3Amain)
 ![C23](https://img.shields.io/badge/C-23-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
+
+> **Two implementations.** This `main` branch holds the C implementation; the
+> Rust implementation lives on the [`rust`](https://github.com/pablofc18/osdoctor/tree/rust)
+> branch. Both offer the same checks, flags, backends, and output, and both test
+> their renderers against the same [`examples/`](examples/) samples.
 
 ---
 
@@ -23,7 +28,7 @@ System
       Linux 7.0.9-arch2-1 #1 SMP PREEMPT_DYNAMIC Fri, 22 May 2026 19:25:09 +0000
   ✓ Root filesystem has 403 GB free
   ✓ /tmp is writable
-  ✓ Memory: 26811 MB available of 31956 MB
+  ✓ Memory: 26792 MB available of 31956 MB
 
 Services
   ✓ No failed system services
@@ -153,7 +158,7 @@ makepkg -si
 ## Usage
 
 ```sh
-osdoctor scan            # run all checks (default if no command given)
+osdoctor scan            # run all checks
 osdoctor scan --json     # machine-readable output
 osdoctor scan --strict   # warnings count as failures for the exit code
 osdoctor system          # only system checks
@@ -238,7 +243,8 @@ The code is a small multi-file C project:
 ```
 include/   public headers (one per module)
 src/       implementation: cli, checks, output, utils, and one file per check group
-tests/     framework-free unit tests (string, filesystem, Hyprland config, service formatting)
+tests/     framework-free unit tests (string, filesystem, Hyprland config, services,
+           packages, output goldens against examples/) and a CLI shell test
 ```
 
 Built with `-Wall -Wextra -Wpedantic -std=c23` and intended to stay

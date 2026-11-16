@@ -255,8 +255,22 @@ static void process_bind_line(const char *line, strset_t *missing, int *checked)
         return;
     }
 
+    /* `exec, [rules] cmd` launches cmd with window rules: the command starts
+     * after the closing bracket. An unterminated rule block has no command. */
+    const char *args = disp_end + 1;
+    while (*args == ' ' || *args == '\t') {
+        args++;
+    }
+    if (*args == '[') {
+        const char *close = strchr(args, ']');
+        if (close == NULL) {
+            return;
+        }
+        args = close + 1;
+    }
+
     char tok[SET_ITEM];
-    first_token(disp_end + 1, tok, sizeof tok);
+    first_token(args, tok, sizeof tok);
     strip_quotes(tok);
     if (!token_is_checkable(tok)) {
         return;
@@ -357,6 +371,9 @@ static void scan_config_file(const char *path, hypr_bind_scan_t *out, pathset_t 
     if (content == NULL) {
         return;
     }
+    if (depth == 0) {
+        out->root_read = true;
+    }
 
     /* Directory of this file, for resolving relative includes. */
     char base_dir[PATH_MAX];
@@ -408,6 +425,11 @@ static int check_hyprland_binds(check_result_list_t *r) {
     hypr_scan_binds(cfg, &scan);
     free(cfg);
 
+    if (!scan.root_read) {
+        return results_add(r, "hyprland-binds", GROUP, CHECK_SKIP, "Could not read Hyprland config",
+                           "~/.config/hypr/hyprland.conf");
+    }
+
     if (scan.missing.len == 0) {
         char msg[OSDOCTOR_MSG_CAP];
         snprintf(msg, sizeof msg, "Hyprland bind commands resolved (%d checked)", scan.checked);
@@ -429,6 +451,9 @@ static int check_hyprland_binds(check_result_list_t *r) {
 static bool looks_like_local_script(const char *tok) {
     if (tok == NULL || *tok == '\0') {
         return false;
+    }
+    if (str_contains(tok, "://")) {
+        return false; /* a URL (https://, file://), not a script on disk */
     }
     return str_starts_with(tok, "~/") || str_starts_with(tok, "./") ||
            str_starts_with(tok, "$HOME/") || str_starts_with(tok, "/home/") ||
@@ -491,6 +516,67 @@ static char *resolve_script(const char *tok, const char *config_dir) {
     return out;
 }
 
+void waybar_scan_scripts(const char *content, const char *config_dir, strset_t *missing,
+                         int *checked) {
+    /* Walk every double-quoted JSON string and inspect its whitespace tokens
+     * for things that look like local script paths. */
+    const char *p = content;
+    while (*p != '\0') {
+        /* Waybar configs are JSONC: skip // line and block comments (only
+         * recognised outside strings; an unterminated block comment runs to
+         * the end of the file). */
+        if (p[0] == '/' && p[1] == '/') {
+            const char *nl = strchr(p, '\n');
+            p = (nl != NULL) ? nl + 1 : p + strlen(p);
+            continue;
+        }
+        if (p[0] == '/' && p[1] == '*') {
+            const char *end = strstr(p + 2, "*/");
+            p = (end != NULL) ? end + 2 : p + strlen(p);
+            continue;
+        }
+        if (*p != '"') {
+            p++;
+            continue;
+        }
+        const char *q = p + 1;
+        char buf[2048];
+        size_t bi = 0;
+        while (*q != '\0' && *q != '"') {
+            if (*q == '\\' && q[1] != '\0') {
+                if (bi + 1 < sizeof buf) {
+                    buf[bi++] = q[1];
+                }
+                q += 2;
+                continue;
+            }
+            if (bi + 1 < sizeof buf) {
+                buf[bi++] = *q;
+            }
+            q++;
+        }
+        buf[bi] = '\0';
+        p = (*q == '"') ? q + 1 : q;
+
+        char *save = NULL;
+        for (char *t = strtok_r(buf, " \t", &save); t != NULL; t = strtok_r(NULL, " \t", &save)) {
+            char tok[SET_ITEM];
+            snprintf(tok, sizeof tok, "%s", t);
+            strip_script_edges(tok);
+            if (!looks_like_local_script(tok)) {
+                continue;
+            }
+            (*checked)++;
+            char *resolved = resolve_script(tok, config_dir);
+            bool exists = (resolved != NULL) && file_exists(resolved);
+            free(resolved);
+            if (!exists) {
+                set_add(missing, tok);
+            }
+        }
+    }
+}
+
 static int check_waybar(check_result_list_t *r) {
     char *jsonc = expand_home_path("~/.config/waybar/config.jsonc");
     char *plain = expand_home_path("~/.config/waybar/config");
@@ -526,51 +612,7 @@ static int check_waybar(check_result_list_t *r) {
 
     strset_t missing = {0};
     int checked = 0;
-
-    /* Walk every double-quoted JSON string and inspect its whitespace tokens
-     * for things that look like local script paths. */
-    const char *p = content;
-    while (*p != '\0') {
-        if (*p != '"') {
-            p++;
-            continue;
-        }
-        const char *q = p + 1;
-        char buf[2048];
-        size_t bi = 0;
-        while (*q != '\0' && *q != '"') {
-            if (*q == '\\' && q[1] != '\0') {
-                if (bi + 1 < sizeof buf) {
-                    buf[bi++] = q[1];
-                }
-                q += 2;
-                continue;
-            }
-            if (bi + 1 < sizeof buf) {
-                buf[bi++] = *q;
-            }
-            q++;
-        }
-        buf[bi] = '\0';
-        p = (*q == '"') ? q + 1 : q;
-
-        char *save = NULL;
-        for (char *t = strtok_r(buf, " \t", &save); t != NULL; t = strtok_r(NULL, " \t", &save)) {
-            char tok[SET_ITEM];
-            snprintf(tok, sizeof tok, "%s", t);
-            strip_script_edges(tok);
-            if (!looks_like_local_script(tok)) {
-                continue;
-            }
-            checked++;
-            char *resolved = resolve_script(tok, config_dir);
-            bool exists = (resolved != NULL) && file_exists(resolved);
-            free(resolved);
-            if (!exists) {
-                set_add(&missing, tok);
-            }
-        }
-    }
+    waybar_scan_scripts(content, config_dir, &missing, &checked);
     free(content);
 
     if (missing.len == 0) {

@@ -100,8 +100,13 @@ char *fs_read_file(const char *path, size_t max_bytes, size_t *out_len) {
         return NULL;
     }
     size_t n = fread(buf, 1, max_bytes, fp);
-    buf[n] = '\0';
+    bool failed = ferror(fp) != 0; /* e.g. EISDIR: opened but not readable */
     fclose(fp);
+    if (failed) {
+        free(buf);
+        return NULL;
+    }
+    buf[n] = '\0';
     if (out_len != NULL) {
         *out_len = n;
     }
