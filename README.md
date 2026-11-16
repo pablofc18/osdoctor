@@ -8,9 +8,14 @@ Omarchy-style setups. It inspects the system, the package manager, systemd
 services, and your desktop session, then prints a clean, grouped report (or
 JSON) with a meaningful exit code you can use in scripts.
 
-[![CI](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml/badge.svg)](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml)
+[![CI](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml/badge.svg?branch=rust)](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml?query=branch%3Arust)
 ![Rust](https://img.shields.io/badge/Rust-2021-orange)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
+
+> **Two implementations.** This `rust` branch holds the Rust implementation;
+> the C implementation lives on [`main`](https://github.com/pablofc18/osdoctor/tree/main).
+> Both offer the same checks, flags, backends, and output, and both test their
+> renderers against the same [`examples/`](examples/) samples.
 
 ---
 

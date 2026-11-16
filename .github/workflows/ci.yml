@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ rust-port ]
+    branches: [ rust ]
   pull_request:
 
 # Least privilege: this workflow only reads the repo to build and test.
