@@ -19,6 +19,9 @@ const CONFIG_MAX_BYTES: usize = 1 << 20;
 pub struct BindScan {
     pub missing: Vec<String>,
     pub checked: i32,
+    /// Whether the root config itself could be read. False means the scan saw
+    /// nothing, which must not be reported as "all binds resolved".
+    pub root_read: bool,
     /// Memoized PATH-resolution results, so a command bound many times only
     /// walks PATH once.
     resolved: HashMap<String, bool>,
@@ -153,7 +156,16 @@ fn process_bind_line(line: &str, scan: &mut BindScan) {
     if dispatcher != "exec" && dispatcher != "execr" {
         return;
     }
-    let tok = strip_quotes(&first_token(&disp[disp_end + 1..]));
+    // `exec, [rules] cmd` launches cmd with window rules: the command starts
+    // after the closing bracket. An unterminated rule block has no command.
+    let mut args = disp[disp_end + 1..].trim_start_matches([' ', '\t']);
+    if let Some(rest) = args.strip_prefix('[') {
+        match rest.find(']') {
+            Some(i) => args = &rest[i + 1..],
+            None => return,
+        }
+    }
+    let tok = strip_quotes(&first_token(args));
     if !token_is_checkable(&tok) {
         return;
     }
@@ -201,6 +213,9 @@ fn scan_config_file(path: &str, scan: &mut BindScan, visited: &mut Vec<String>, 
         Some(c) => c,
         None => return,
     };
+    if depth == 0 {
+        scan.root_read = true;
+    }
     let base_dir = canon
         .parent()
         .map(|p| p.to_string_lossy().into_owned())
@@ -240,6 +255,16 @@ pub fn check_binds(results: &mut Vec<CheckResult>) {
         return;
     }
     let scan = scan_binds(&cfg);
+    if !scan.root_read {
+        results.push(CheckResult::new(
+            "hyprland-binds",
+            GROUP,
+            CheckStatus::Skip,
+            "Could not read Hyprland config",
+            "~/.config/hypr/hyprland.conf",
+        ));
+        return;
+    }
     if scan.missing.is_empty() {
         results.push(CheckResult::new(
             "hyprland-binds",
@@ -289,6 +314,44 @@ mod tests {
         assert!(has_missing(&scan, "osd_bogus_root"));
         assert!(!has_missing(&scan, "sh"));
         assert_eq!(scan.missing.len(), 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn exec_rules_prefix_skipped() {
+        // `exec, [rules] cmd` launches cmd with window rules; the command is
+        // the first token after the closing bracket, not "[workspace".
+        let dir = unique_dir("rules");
+        let root = dir.join("hyprland.conf");
+        write(
+            &root,
+            "bind = SUPER, A, exec, [workspace 2 silent] osd_bogus_rules\n\
+             bind = SUPER, B, exec, [float; size 50% 50%]sh -c true\n\
+             bind = SUPER, C, exec, [workspace 3 silent\n",
+        );
+        let scan = scan_binds(root.to_str().unwrap());
+        assert_eq!(scan.checked, 2);
+        assert_eq!(scan.missing, vec!["osd_bogus_rules".to_string()]);
+        assert!(scan.root_read);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn unreadable_root_is_flagged() {
+        // A root config that exists but cannot be read (here: a directory,
+        // which stays unreadable even as root) must not look like a clean
+        // scan of zero binds.
+        let dir = unique_dir("unreadable");
+        let root = dir.join("hyprland.conf");
+        std::fs::create_dir_all(&root).unwrap();
+        let scan = scan_binds(root.to_str().unwrap());
+        assert!(!scan.root_read);
+        assert_eq!(scan.checked, 0);
+
+        // An empty but readable root is a clean scan.
+        let ok = dir.join("empty.conf");
+        write(&ok, "");
+        assert!(scan_binds(ok.to_str().unwrap()).root_read);
         std::fs::remove_dir_all(&dir).ok();
     }
 

@@ -12,6 +12,7 @@ const SET_CAP: usize = 64;
 
 fn looks_like_local_script(tok: &str) -> bool {
     !tok.is_empty()
+        && !tok.contains("://") // a URL (https://, file://), not a script on disk
         && (tok.starts_with("~/")
             || tok.starts_with("./")
             || tok.starts_with("$HOME/")
@@ -55,6 +56,28 @@ fn resolve_script(tok: &str, config_dir: &str) -> String {
 fn scan_strings(content: &str, config_dir: &str, missing: &mut Vec<String>, checked: &mut i32) {
     let mut it = content.chars().peekable();
     while let Some(c) = it.next() {
+        // Waybar configs are JSONC: skip // line and /* block */ comments
+        // (only recognised outside strings; an unterminated block comment
+        // runs to the end of the file).
+        if c == '/' && it.peek() == Some(&'/') {
+            for c2 in it.by_ref() {
+                if c2 == '\n' {
+                    break;
+                }
+            }
+            continue;
+        }
+        if c == '/' && it.peek() == Some(&'*') {
+            it.next(); // the '*' of the opener
+            let mut prev = '\0';
+            for c2 in it.by_ref() {
+                if prev == '*' && c2 == '/' {
+                    break;
+                }
+                prev = c2;
+            }
+            continue;
+        }
         if c != '"' {
             continue;
         }
@@ -173,6 +196,11 @@ mod tests {
         assert!(looks_like_local_script("scripts/a"));
         assert!(looks_like_local_script("~/.config/waybar/scripts/b"));
         assert!(!looks_like_local_script("waybar"));
+        // URLs are opened, not executed from disk.
+        assert!(!looks_like_local_script("https://example.com/scripts/x"));
+        assert!(!looks_like_local_script(
+            "file:///home/u/.config/waybar/scripts/x"
+        ));
     }
 
     #[test]
@@ -190,5 +218,31 @@ mod tests {
         assert_eq!(checked, 2);
         assert_eq!(missing, vec!["scripts/missing".to_string()]);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn jsonc_comments_ignored() {
+        // Waybar configs are JSONC: script paths inside // and /* */ comments
+        // are not referenced. Comment markers inside strings are kept.
+        let content = r#"// "scripts/line-comment"
+{
+  /* "scripts/block-comment"
+     still "scripts/block-comment-2" */
+  "exec": "scripts/real", // "scripts/trailing"
+  "c": "scripts/kept // not-a-comment", /**/ "b": "scripts/after-empty-block"
+}
+/* unterminated "scripts/unterminated""#;
+        let mut missing = Vec::new();
+        let mut checked = 0;
+        scan_strings(content, "/nonexistent", &mut missing, &mut checked);
+        assert_eq!(
+            missing,
+            vec![
+                "scripts/real".to_string(),
+                "scripts/kept".to_string(),
+                "scripts/after-empty-block".to_string(),
+            ]
+        );
+        assert_eq!(checked, 3);
     }
 }
