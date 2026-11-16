@@ -5,3 +5,6 @@
 *.swp
 *~
 .DS_Store
+
+# Local design notes and plans
+/docs/
