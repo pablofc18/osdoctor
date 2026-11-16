@@ -95,6 +95,21 @@ Output is colorized when writing to a terminal, and plain when piped or when
 
 ## Installation
 
+### Arch Linux
+
+[`packaging/PKGBUILD`](packaging/PKGBUILD) builds the latest release from its
+source tarball (verified by checksum), with both native backends (libsystemd
+and libalpm), and installs the binary, man page, license, and an example
+config:
+
+```sh
+git clone https://github.com/pablofc18/osdoctor.git
+cd osdoctor/packaging
+makepkg -si
+```
+
+An [AUR package](https://github.com/pablofc18/osdoctor/issues/9) is planned.
+
 ### From source
 
 Requires a Rust toolchain (stable, **Rust ≥ 1.85**) with `cargo`.
@@ -130,18 +145,6 @@ cargo build --release --features libalpm
 This needs libalpm (provided by `pacman` on Arch). The libalpm backend is tried
 first and falls back to `pacman -Qdtq` on a hard error. The two features are
 independent and can be combined: `--features libsystemd,libalpm`.
-
-### Arch Linux (PKGBUILD)
-
-A [`packaging/PKGBUILD`](packaging/PKGBUILD) is included. To build a package
-from a tagged release:
-
-```sh
-cd packaging
-makepkg -si
-```
-
-(For a real release, update `sha256sums` with `updpkgsums`.)
 
 ---
 
