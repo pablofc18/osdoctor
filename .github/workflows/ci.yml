@@ -38,3 +38,67 @@ jobs:
           # we only assert that it runs and that --json stays valid.
           ./target/release/osdoctor scan || true
           ./target/release/osdoctor scan --json | python3 -m json.tool > /dev/null
+
+  # Exercise the optional sd-bus backend so the `libsystemd` feature stays
+  # building and passing alongside the default systemctl path.
+  build-sdbus:
+    name: Build with sd-bus backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust (stable) and libsystemd
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          sudo apt-get update && sudo apt-get install -y libsystemd-dev
+
+      - name: Clippy (libsystemd)
+        run: cargo clippy --all-targets --features libsystemd -- -D warnings
+
+      - name: Build (libsystemd)
+        run: cargo build --release --locked --features libsystemd
+
+      - name: Assert the binary links libsystemd
+        run: ldd ./target/release/osdoctor | grep -q libsystemd
+
+      - name: Test (libsystemd)
+        run: cargo test --locked --features libsystemd
+
+      - name: Smoke test
+        run: |
+          ./target/release/osdoctor version
+          ./target/release/osdoctor help
+          ./target/release/osdoctor scan || true
+          ./target/release/osdoctor scan --json | python3 -m json.tool > /dev/null
+
+  # Exercise the optional libalpm backend so the `libalpm` feature stays
+  # building and passing. libalpm ships with pacman, so this runs in an Arch
+  # container rather than on the Ubuntu runner.
+  build-alpm:
+    name: Build with libalpm backend
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install toolchain
+        run: pacman -Syu --noconfirm git base-devel rust python
+
+      - uses: actions/checkout@v6
+
+      - name: Clippy (libalpm)
+        run: cargo clippy --all-targets --features libalpm -- -D warnings
+
+      - name: Build (libalpm)
+        run: cargo build --release --locked --features libalpm
+
+      - name: Assert the binary links libalpm
+        run: ldd ./target/release/osdoctor | grep -q libalpm
+
+      - name: Test (libalpm)
+        run: cargo test --locked --features libalpm
+
+      - name: Smoke test
+        run: |
+          ./target/release/osdoctor version
+          ./target/release/osdoctor help
+          ./target/release/osdoctor scan || true
+          ./target/release/osdoctor scan --json | python3 -m json.tool > /dev/null

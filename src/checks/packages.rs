@@ -1,6 +1,11 @@
 //! Packages checks (replaces check_packages.c): pacman db lock, log, and orphan
-//! packages via `pacman -Qdtq`. The query->emit seam is preserved (libalpm
-//! backend out of scope for the port).
+//! packages.
+//!
+//! The orphan-package lookup sits behind a small backend seam. `query_pacman`
+//! runs `pacman -Qdtq`; when built with the `libalpm` feature,
+//! `packages_alpm::query` reads the local pacman database directly and is
+//! tried first, falling back to pacman only on a hard error. `emit` turns
+//! either backend's result into the check output, so both share wording.
 
 use crate::model::{CheckResult, CheckStatus};
 use crate::util::exec::run_capture;
@@ -8,7 +13,7 @@ use crate::util::fs::{file_exists, file_readable, is_executable_in_path};
 use crate::util::strings::Detail;
 
 const GROUP: &str = "Packages";
-const DETAIL_CAP: usize = 1024;
+pub(crate) const DETAIL_CAP: usize = 1024;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum QueryStatus {
@@ -79,6 +84,19 @@ fn query_pacman() -> Query {
     }
 }
 
+/// Enumerate orphans, preferring libalpm when compiled in. An Ok result is
+/// authoritative; only a hard error (Unavailable) falls back to pacman.
+fn query_orphans() -> Query {
+    #[cfg(feature = "libalpm")]
+    {
+        let q = super::packages_alpm::query();
+        if q.status != QueryStatus::Unavailable {
+            return q;
+        }
+    }
+    query_pacman()
+}
+
 pub fn run(results: &mut Vec<CheckResult>) {
     if file_exists("/var/lib/pacman/db.lck") {
         results.push(CheckResult::new(
@@ -116,7 +134,7 @@ pub fn run(results: &mut Vec<CheckResult>) {
         ));
     }
 
-    emit(results, &query_pacman());
+    emit(results, &query_orphans());
 }
 
 #[cfg(test)]

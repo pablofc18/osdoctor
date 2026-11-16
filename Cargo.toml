@@ -18,5 +18,14 @@ path = "src/main.rs"
 [dependencies]
 libc = "0.2"
 
+# Optional direct-library backends (off by default, so the default build links
+# only libc). Each is tried first and falls back to the CLI tool at runtime on
+# a hard error.
+[features]
+# Query systemd over D-Bus via libsystemd (sd-bus) instead of parsing systemctl.
+libsystemd = []
+# Read the local pacman database via libalpm instead of running pacman -Qdtq.
+libalpm = []
+
 [profile.release]
 opt-level = 2

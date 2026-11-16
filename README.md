@@ -60,7 +60,8 @@ Output is colorized when writing to a terminal, and plain when piped or when
 - **Script-friendly:** stable exit codes and `--json` output.
 - **`--strict` mode** to treat warnings as failures in CI.
 - **Small and dependency-light:** Rust std + POSIX, with `libc` the only crate
-  (used for `uname`, `statvfs`, `glob`, and `access`).
+  (optionally libsystemd and libalpm for the service and package checks - see
+  [Build options](#build-options)).
 
 ### Checks
 
@@ -94,12 +95,31 @@ sudo install -Dm755 target/release/osdoctor /usr/local/bin/osdoctor
 sudo install -Dm644 man/osdoctor.1 /usr/local/share/man/man1/osdoctor.1
 ```
 
-### Backends
+### Build options
 
-The service and package checks shell out to `systemctl` and `pacman`. The
-optional direct-library backends (libsystemd/sd-bus and libalpm) the C build
-offered are not yet ported; behaviour on a normal Arch system is identical,
-since those were faster paths for the same data.
+By default the build links only libc and the service checks shell out to
+`systemctl`. To query systemd directly over D-Bus instead (faster, with no
+subprocess or text parsing), enable the `libsystemd` feature:
+
+```sh
+cargo build --release --features libsystemd
+```
+
+This needs libsystemd (`libsystemd-dev` on Debian/Ubuntu; `systemd-libs` on
+Arch). The sd-bus backend is tried first and falls back to `systemctl` at
+runtime if the system bus is unavailable, so a binary built this way still
+behaves sensibly on hosts without a reachable bus.
+
+For the orphan-package check, you can likewise read the local pacman database
+directly via libalpm instead of shelling out to `pacman -Qdtq`:
+
+```sh
+cargo build --release --features libalpm
+```
+
+This needs libalpm (provided by `pacman` on Arch). The libalpm backend is tried
+first and falls back to `pacman -Qdtq` on a hard error. The two features are
+independent and can be combined: `--features libsystemd,libalpm`.
 
 ### Arch Linux (PKGBUILD)
 
@@ -192,6 +212,8 @@ A complete sample is in [`examples/sample-output.json`](examples/sample-output.j
 ```sh
 cargo build            # build (debug)
 cargo build --release  # optimized build
+cargo build --features libsystemd  # with the sd-bus service backend
+cargo build --features libalpm     # with the libalpm orphan backend
 cargo test             # run unit + integration tests
 cargo fmt              # format
 cargo clippy           # lint
@@ -205,11 +227,13 @@ src/cli.rs     argument parsing and dispatch
 src/output/    text and JSON renderers
 src/checks/    one module per check group (system, services, packages, desktop)
 src/util/      exec, fs, and string helpers
-tests/         integration tests (JSON golden + CLI)
+tests/         integration tests (JSON + text goldens against examples/, CLI)
 ```
 
-`libc` is the only dependency, used for the handful of syscalls std does not
-expose (`uname`, `statvfs`, `glob`, `access`).
+`libc` is the only crate dependency, used for the handful of syscalls std does
+not expose (`uname`, `statvfs`, `glob`, `access`). The optional `libsystemd`
+and `libalpm` features link those system libraries through small hand-written
+FFI modules (`src/checks/services_sdbus.rs`, `src/checks/packages_alpm.rs`).
 
 ---
 
@@ -217,7 +241,7 @@ expose (`uname`, `statvfs`, `glob`, `access`).
 
 Planned work is tracked in the [issue tracker](https://github.com/pablofc18/osdoctor/issues):
 
-- [Use `libalpm`/sd-bus direct backends](https://github.com/pablofc18/osdoctor/issues/3) — available in the C build on `main`; not yet ported to Rust.
+- ~~[Use `libalpm` directly instead of shelling out to `pacman`](https://github.com/pablofc18/osdoctor/issues/3)~~ - done; built with `--features libalpm`.
 - [Config file for thresholds and toggling checks](https://github.com/pablofc18/osdoctor/issues/4)
 - [Plugin-style external checks](https://github.com/pablofc18/osdoctor/issues/5)
 - [TUI mode](https://github.com/pablofc18/osdoctor/issues/6)

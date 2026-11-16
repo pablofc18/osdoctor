@@ -6,24 +6,27 @@ pkgdesc="Linux desktop health checks for Arch/Hyprland systems"
 arch=('x86_64' 'aarch64')
 url="https://github.com/pablofc18/osdoctor"
 license=('MIT')
-depends=('glibc')
-makedepends=('rust' 'cargo')
+depends=('glibc' 'gcc-libs' 'systemd-libs' 'pacman')
+makedepends=('cargo')
 optdepends=('hyprland: Hyprland desktop/session checks'
-            'waybar: Waybar configuration checks'
-            'pacman: package checks'
-            'systemd: service checks')
+            'waybar: Waybar configuration checks')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 # Replace with the real checksum for a tagged release, e.g. via `updpkgsums`.
 sha256sums=('SKIP')
 
+# Build with the sd-bus service backend and the libalpm package backend; both
+# systemd-libs and pacman are always present on Arch. The features are passed
+# to every cargo invocation so build and check test the same binary.
+_features=libsystemd,libalpm
+
 build() {
     cd "$pkgname-$pkgver"
-    cargo build --release --locked
+    cargo build --release --locked --features "$_features"
 }
 
 check() {
     cd "$pkgname-$pkgver"
-    cargo test --release --locked
+    cargo test --release --locked --features "$_features"
 }
 
 package() {

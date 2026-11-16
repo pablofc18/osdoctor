@@ -1,6 +1,11 @@
-//! Services checks (replaces check_services.c): failed system/user units via
-//! `systemctl`. The query->emit seam is preserved (only the systemctl backend
-//! is implemented; the sd-bus backend is out of scope for the port).
+//! Services checks (replaces check_services.c): failed system/user units.
+//!
+//! The failed-unit lookup sits behind a small backend seam. `query_systemctl`
+//! runs `systemctl --failed` (fixed argument list, stderr discarded). When
+//! built with the `libsystemd` feature, `services_sdbus::query` asks the
+//! systemd manager directly over D-Bus and is tried first, falling back to
+//! systemctl only on a hard bus error. `emit` turns either backend's result
+//! into the check output, so both share wording.
 
 use crate::model::{CheckResult, CheckStatus};
 use crate::util::exec::run_capture;
@@ -8,7 +13,7 @@ use crate::util::fs::is_executable_in_path;
 use crate::util::strings::Detail;
 
 const GROUP: &str = "Services";
-const DETAIL_CAP: usize = 1024;
+pub(crate) const DETAIL_CAP: usize = 1024;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
@@ -132,11 +137,23 @@ fn query_systemctl(scope: Scope) -> Query {
     classify(code, &out)
 }
 
+/// Query one scope, preferring sd-bus when compiled in. Ok and NoSession are
+/// authoritative and returned as-is; only a hard sd-bus error (Unavailable)
+/// falls back to the systemctl backend.
+fn query(scope: Scope) -> Query {
+    #[cfg(feature = "libsystemd")]
+    {
+        let q = super::services_sdbus::query(scope);
+        if q.status != QueryStatus::Unavailable {
+            return q;
+        }
+    }
+    query_systemctl(scope)
+}
+
 pub fn run(results: &mut Vec<CheckResult>) {
-    let q = query_systemctl(Scope::System);
-    emit(results, Scope::System, &q);
-    let q = query_systemctl(Scope::User);
-    emit(results, Scope::User, &q);
+    emit(results, Scope::System, &query(Scope::System));
+    emit(results, Scope::User, &query(Scope::User));
 }
 
 #[cfg(test)]
@@ -284,7 +301,7 @@ mod tests {
     fn classify_nonzero_exit_is_no_session() {
         // A non-zero systemctl exit means the manager/bus could not be queried
         // (no user session, or no reachable system bus). Either is a Skip, not
-        // a false "no failed services" OK — including the system scope, which
+        // a false "no failed services" OK - including the system scope, which
         // previously ignored the exit code.
         let q = classify(Some(1), "");
         assert_eq!(q.status, QueryStatus::NoSession);

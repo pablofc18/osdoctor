@@ -2,7 +2,11 @@
 
 pub mod desktop;
 pub mod packages;
+#[cfg(feature = "libalpm")]
+mod packages_alpm;
 pub mod services;
+#[cfg(feature = "libsystemd")]
+mod services_sdbus;
 pub mod system;
 
 use crate::model::CheckResult;
