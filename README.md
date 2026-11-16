@@ -23,7 +23,7 @@ System
       Linux 7.0.9-arch2-1 #1 SMP PREEMPT_DYNAMIC Fri, 22 May 2026 19:25:09 +0000
   ✓ Root filesystem has 403 GB free
   ✓ /tmp is writable
-  ✓ Memory: 26811 MB available of 31956 MB
+  ✓ Memory: 26792 MB available of 31956 MB
 
 Services
   ✓ No failed system services
@@ -153,7 +153,7 @@ makepkg -si
 ## Usage
 
 ```sh
-osdoctor scan            # run all checks (default if no command given)
+osdoctor scan            # run all checks
 osdoctor scan --json     # machine-readable output
 osdoctor scan --strict   # warnings count as failures for the exit code
 osdoctor system          # only system checks
@@ -238,7 +238,8 @@ The code is a small multi-file C project:
 ```
 include/   public headers (one per module)
 src/       implementation: cli, checks, output, utils, and one file per check group
-tests/     framework-free unit tests (string, filesystem, Hyprland config, service formatting)
+tests/     framework-free unit tests (string, filesystem, Hyprland config, services,
+           packages, output goldens against examples/) and a CLI shell test
 ```
 
 Built with `-Wall -Wextra -Wpedantic -std=c23` and intended to stay
