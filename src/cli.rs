@@ -48,8 +48,11 @@ Commands:
 Options:
   --json          Output results as JSON
   --strict        Treat warnings as failures for the exit code
+  --config PATH   Read configuration from PATH
   -h, --help      Show this help
   -V, --version   Print version
+
+Configuration: $XDG_CONFIG_HOME/osdoctor/config.toml (default ~/.config/osdoctor/config.toml)
 
 Exit codes:
   0  all checks passed
@@ -86,10 +89,21 @@ pub fn run(args: &[String]) -> i32 {
     let mut strict = false;
     let mut want_help = false;
     let mut want_version = false;
+    let mut config_path: Option<String> = None;
     let mut cmd: Option<Command> = None;
 
-    for arg in args.iter().skip(1) {
+    let mut it = args.iter().skip(1);
+    while let Some(arg) = it.next() {
         match arg.as_str() {
+            "--config" => {
+                if config_path.is_some() {
+                    return usage_error("--config given more than once", false);
+                }
+                match it.next() {
+                    Some(p) => config_path = Some(p.clone()),
+                    None => return usage_error("--config requires a path", true),
+                }
+            }
             "--json" => json = true,
             "--strict" => strict = true,
             "-h" | "--help" => want_help = true,
@@ -120,7 +134,13 @@ pub fn run(args: &[String]) -> i32 {
         return usage_error("no command given", true);
     };
 
-    let config = Config::default();
+    let config = match Config::load(config_path.as_deref()) {
+        Ok(c) => c,
+        Err(e) => {
+            write_stderr(&format!("osdoctor: {e}\n"));
+            return EXIT_USAGE;
+        }
+    };
     let mut results: Vec<CheckResult> = Vec::new();
     match cmd {
         Command::System => checks::run_system(&mut results, &config),
@@ -130,6 +150,8 @@ pub fn run(args: &[String]) -> i32 {
         Command::Scan => checks::run_all(&mut results, &config),
         Command::Version | Command::Help => unreachable!(),
     }
+
+    config.apply_overrides(&mut results);
 
     let printed = if json {
         output::json::print_json(&results)
@@ -172,5 +194,7 @@ mod tests {
         assert!(u.starts_with(&format!("osdoctor {VERSION} - Linux desktop health checks")));
         assert!(u.contains("\n  osdoctor <command> [options]\n"));
         assert!(u.contains("\nExit codes:\n"));
+        assert!(u.contains("  --config PATH   Read configuration from PATH\n"));
+        assert!(u.contains("\nConfiguration: $XDG_CONFIG_HOME/osdoctor/config.toml"));
     }
 }

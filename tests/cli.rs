@@ -1,9 +1,49 @@
 use std::os::fd::FromRawFd;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-fn bin() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_osdoctor"))
+/// A fresh empty directory under the system temp dir, unique per call.
+fn temp_dir() -> PathBuf {
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "osdoctor-test-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::SeqCst)
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
 }
+
+/// The binary, isolated from the developer's real config: HOME and
+/// XDG_CONFIG_HOME point at a fresh empty directory. Tests that need a config
+/// override these with a later `.env`.
+fn bin() -> Command {
+    let dir = temp_dir();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_osdoctor"));
+    cmd.env("HOME", &dir).env("XDG_CONFIG_HOME", &dir);
+    cmd
+}
+
+/// A fresh config home; returns (home dir, path of its default config file).
+fn config_home_with(contents: &str) -> (PathBuf, PathBuf) {
+    let dir = temp_dir();
+    let cfg_dir = dir.join("osdoctor");
+    std::fs::create_dir_all(&cfg_dir).unwrap();
+    let file = cfg_dir.join("config.toml");
+    std::fs::write(&file, contents).unwrap();
+    (dir, file)
+}
+
+fn bin_in(home: &Path) -> Command {
+    let mut cmd = bin();
+    cmd.env("HOME", home).env("XDG_CONFIG_HOME", home);
+    cmd
+}
+
+const SYSTEM_OFF_EXCEPT_TMP: &str =
+    "[checks]\nkernel-version = \"off\"\nroot-disk-space = \"off\"\nmemory-info = \"off\"\n";
 
 #[test]
 fn version_prints_exact_line() {
@@ -99,4 +139,118 @@ fn unwritable_stdout_is_an_internal_error() {
         "{stderr}"
     );
     assert!(!stderr.contains("panicked"), "{stderr}");
+}
+
+#[test]
+fn config_off_removes_checks_and_overrides_apply() {
+    let (home, file) =
+        config_home_with(&format!("{SYSTEM_OFF_EXCEPT_TMP}tmp-writable = \"fail\"\n"));
+    let out = bin_in(&home)
+        .args(["system", "--json", "--config"])
+        .arg(&file)
+        .output()
+        .unwrap();
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(s.matches("\"id\"").count(), 1, "{s}");
+    assert!(s.contains("\"tmp-writable\""));
+    let code = out.status.code();
+    if s.contains("\"status\": \"ok\"") {
+        assert_eq!(code, Some(0));
+    } else {
+        assert_eq!(code, Some(2), "{s}");
+    }
+}
+
+#[test]
+fn invalid_config_exits_three_with_path() {
+    let (home, file) = config_home_with("[checks]\nwaybar-script = \"off\"\n");
+    let out = bin_in(&home)
+        .args(["scan", "--config"])
+        .arg(&file)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3));
+    assert!(out.stdout.is_empty());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.starts_with("osdoctor: "), "{err}");
+    assert!(err.contains("config.toml"), "{err}");
+    assert!(
+        err.contains("unknown check \"waybar-script\" at line 2"),
+        "{err}"
+    );
+}
+
+#[test]
+fn missing_explicit_config_exits_three() {
+    let home = temp_dir();
+    let out = bin_in(&home)
+        .args(["scan", "--config"])
+        .arg(home.join("nope.toml"))
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3));
+    assert!(out.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("nope.toml"));
+}
+
+#[test]
+fn default_config_location_is_used() {
+    let (home, _) = config_home_with("[checks]\nkernel-version = \"off\"\n");
+    let out = bin_in(&home).args(["system", "--json"]).output().unwrap();
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains("\"tmp-writable\""), "{s}");
+    assert!(!s.contains("kernel-version"), "{s}");
+}
+
+#[test]
+fn broken_config_does_not_block_help_or_version() {
+    let (home, _) = config_home_with("[[[");
+    for arg in ["help", "version", "-h", "-V"] {
+        let out = bin_in(&home).arg(arg).output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{arg}");
+    }
+}
+
+#[test]
+fn config_flag_without_value_exits_three() {
+    let out = bin().args(["scan", "--config"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(3));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--config requires a path"));
+}
+
+#[test]
+fn config_flag_twice_exits_three() {
+    let out = bin()
+        .args(["scan", "--config", "a", "--config", "b"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--config given more than once"));
+}
+
+#[test]
+fn strict_applies_after_overrides() {
+    let base = "[thresholds]\nmemory_warn_percent = 100\n[checks]\nkernel-version = \"off\"\nroot-disk-space = \"off\"\ntmp-writable = \"off\"\n";
+    let run = |extra: &str, strict: bool| {
+        let (home, file) = config_home_with(&format!("{base}{extra}"));
+        let mut cmd = bin_in(&home);
+        cmd.args(["system", "--config"]).arg(&file);
+        if strict {
+            cmd.arg("--strict");
+        }
+        cmd.output().unwrap().status.code()
+    };
+    assert_eq!(run("memory-info = \"fail\"\n", false), Some(2));
+    assert_eq!(run("memory-info = \"warn\"\n", false), Some(1));
+    assert_eq!(run("memory-info = \"warn\"\n", true), Some(2));
+}
+
+#[test]
+fn dev_null_config_means_defaults() {
+    let (home, _) = config_home_with("[checks]\nkernel-version = \"off\"\n");
+    let out = bin_in(&home)
+        .args(["system", "--json", "--config", "/dev/null"])
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&out.stdout).contains("kernel-version"));
 }

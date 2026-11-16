@@ -63,8 +63,10 @@ Output is colorized when writing to a terminal, and plain when piped or when
   doesn't apply to your environment).
 - **Script-friendly:** stable exit codes and `--json` output.
 - **`--strict` mode** to treat warnings as failures in CI.
-- **Small and dependency-light:** Rust std + POSIX, with `libc` the only crate
-  (optionally libsystemd and libalpm for the service and package checks - see
+- **Optional configuration:** a TOML file tunes thresholds and per-check
+  modes (see [Configuration](#configuration)).
+- **Small and dependency-light:** Rust std + POSIX, with `libc`, `serde`, and
+  `toml` as the only crates (optionally libsystemd and libalpm for the service and package checks - see
   [Build options](#build-options)).
 
 ### Checks
@@ -91,7 +93,7 @@ Output is colorized when writing to a terminal, and plain when piped or when
 
 ### From source
 
-Requires a Rust toolchain (stable, **Rust ≥ 1.70**) with `cargo`.
+Requires a Rust toolchain (stable, **Rust ≥ 1.85**) with `cargo`.
 
 ```sh
 cargo build --release
@@ -149,9 +151,49 @@ osdoctor system          # only system checks
 osdoctor services        # only service checks
 osdoctor packages        # only package checks
 osdoctor desktop         # only desktop/session checks
+osdoctor scan --config PATH   # read configuration from PATH
 osdoctor version
 osdoctor help
 ```
+
+---
+
+## Configuration
+
+osdoctor works with no configuration. To tune it, create
+`$XDG_CONFIG_HOME/osdoctor/config.toml` (default `~/.config/osdoctor/config.toml`),
+or pass `--config PATH`. Every key is optional. A sample is in
+[`examples/config.toml`](examples/config.toml):
+
+```toml
+# ~/.config/osdoctor/config.toml - every key is optional.
+
+[thresholds]
+disk_warn_gb = 10          # WARN when / has less free space than this
+disk_fail_gb = 2           # FAIL when / has less free space than this
+memory_warn_percent = 10   # WARN when less than this % of memory is available
+
+[checks]
+# <check-id> = "off" | "warn" | "fail"
+#   off   the check does not run and is not reported
+#   warn  a WARN or FAIL result from this check is reported as WARN
+#   fail  a WARN or FAIL result from this check is reported as FAIL
+waybar-scripts = "warn"
+# pacman-log = "off"
+```
+
+Rules:
+
+- `[thresholds]` set the limits used by the root disk space and memory checks.
+- `[checks]` maps a check ID (see [Checks](#checks)) to a mode. `warn` and
+  `fail` only affect results that are already WARN or FAIL; OK and SKIP rows are
+  never changed. `off` hides the check and skips running it.
+- A missing default config file means defaults. A missing `--config` file, a
+  syntax error, an unknown key or check ID, or an invalid value is an error:
+  `osdoctor: <message>` on stderr and exit code 3, with nothing on stdout.
+- `--strict` is applied after the modes, so `warn` rows still fail under it.
+- `--config /dev/null` forces the defaults even if a default config file exists.
+- `help` and `version` never read the config.
 
 ---
 
@@ -234,8 +276,9 @@ src/util/      exec, fs, and string helpers
 tests/         integration tests (JSON + text goldens against examples/, CLI)
 ```
 
-`libc` is the only crate dependency, used for the handful of syscalls std does
-not expose (`uname`, `statvfs`, `glob`, `access`). The optional `libsystemd`
+The crate dependencies are `libc`, `serde`, and `toml`. `libc` covers the
+handful of syscalls std does not expose (`uname`, `statvfs`, `glob`, `access`);
+`serde` and `toml` parse the config file (`src/config.rs`). The optional `libsystemd`
 and `libalpm` features link those system libraries through small hand-written
 FFI modules (`src/checks/services_sdbus.rs`, `src/checks/packages_alpm.rs`).
 
