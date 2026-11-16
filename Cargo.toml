@@ -1,0 +1,31 @@
+[package]
+name = "osdoctor"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+license = "MIT"
+description = "Linux desktop health checks for Arch/Hyprland systems"
+repository = "https://github.com/pablofc18/osdoctor"
+
+[lib]
+name = "osdoctor"
+path = "src/lib.rs"
+
+[[bin]]
+name = "osdoctor"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+
+# Optional direct-library backends (off by default, so the default build links
+# only libc). Each is tried first and falls back to the CLI tool at runtime on
+# a hard error.
+[features]
+# Query systemd over D-Bus via libsystemd (sd-bus) instead of parsing systemctl.
+libsystemd = []
+# Read the local pacman database via libalpm instead of running pacman -Qdtq.
+libalpm = []
+
+[profile.release]
+opt-level = 2

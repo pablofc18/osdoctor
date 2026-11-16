@@ -83,20 +83,33 @@ Inspected by the Wayland session check.
 .B HYPRLAND_INSTANCE_SIGNATURE ", " XDG_RUNTIME_DIR
 Used to locate the Hyprland IPC socket.
 .TP
+.B XDG_CONFIG_HOME
+Directory holding the Hyprland and Waybar configuration files when set to an
+absolute path; otherwise
+.IR ~/.config .
+.TP
 .B HOME
-Used to locate Hyprland and Waybar configuration files.
+Expands
+.B ~
+in configuration paths and commands; relative Hyprland exec commands resolve
+against it, as Hyprland runs them from the home directory.
 .TP
 .B NO_COLOR
 If set, disables colorized output. Color is also disabled automatically when
 standard output is not a terminal.
 .SH FILES
 .TP
-.I ~/.config/hypr/hyprland.conf
+.I $XDG_CONFIG_HOME/hypr/hyprland.conf
 Parsed for \fBexec\fR bind commands, including any files pulled in with
-\fBsource =\fR (resolved recursively).
+\fBsource =\fR (resolved recursively, relative to the including file).
+Hyprland \fB$variables\fR and environment variables are expanded, and the
+program each command runs (as \fBsh \-c\fR would, after any
+\fINAME\fR=\fIvalue\fR prefixes) must resolve to an executable. Commands that
+start with a shell builtin or operator are not checked.
 .TP
-.I ~/.config/waybar/config.jsonc ", " ~/.config/waybar/config
-Parsed for referenced local script paths.
+.I $XDG_CONFIG_HOME/waybar/config.jsonc ", " $XDG_CONFIG_HOME/waybar/config
+The programs of command fields (\fBexec\fR, \fBexec\-*\fR, \fBon\-*\fR) that
+point at local scripts must exist. JSONC comments are ignored.
 .TP
 .I /var/lib/pacman/db.lck
 Presence indicates a locked pacman database.
