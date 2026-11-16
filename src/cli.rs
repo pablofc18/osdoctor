@@ -52,7 +52,8 @@ Options:
   -h, --help      Show this help
   -V, --version   Print version
 
-Configuration: $XDG_CONFIG_HOME/osdoctor/config.toml (default ~/.config/osdoctor/config.toml)
+Configuration:
+  $XDG_CONFIG_HOME/osdoctor/config.toml (default ~/.config/osdoctor/config.toml)
 
 Exit codes:
   0  all checks passed
@@ -195,6 +196,6 @@ mod tests {
         assert!(u.contains("\n  osdoctor <command> [options]\n"));
         assert!(u.contains("\nExit codes:\n"));
         assert!(u.contains("  --config PATH   Read configuration from PATH\n"));
-        assert!(u.contains("\nConfiguration: $XDG_CONFIG_HOME/osdoctor/config.toml"));
+        assert!(u.contains("\nConfiguration:\n  $XDG_CONFIG_HOME/osdoctor/config.toml"));
     }
 }

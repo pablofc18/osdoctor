@@ -1,16 +1,18 @@
-# osdoctor
+<h1 align="center">osdoctor</h1>
 
-**Linux desktop health checks for Arch/Hyprland systems.**
+<p align="center"><strong>Linux desktop health checks for Arch/Hyprland systems.</strong></p>
+
+<p align="center">
+  <a href="https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml?query=branch%3Amain"><img src="https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Rust-2021-orange" alt="Rust">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT">
+</p>
 
 `osdoctor` is a small, read-only command-line utility written in Rust that
-diagnoses common problems on Arch Linux desktops — especially Hyprland and
+diagnoses common problems on Arch Linux desktops - especially Hyprland and
 Omarchy-style setups. It inspects the system, the package manager, systemd
 services, and your desktop session, then prints a clean, grouped report (or
 JSON) with a meaningful exit code you can use in scripts.
-
-[![CI](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml?query=branch%3Amain)
-![Rust](https://img.shields.io/badge/Rust-2021-orange)
-![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
 > osdoctor was first written in C. The C implementation is no longer
 > maintained; its final state is preserved at the
@@ -56,8 +58,8 @@ Output is colorized when writing to a terminal, and plain when piped or when
 
 ## Features
 
-- **Zero configuration** — run `osdoctor scan` and get an answer.
-- **Read-only and safe** — no system changes, no root required for normal scans.
+- **Zero configuration** - run `osdoctor scan` and get an answer.
+- **Read-only and safe** - no system changes, no root required for normal scans.
 - **Grouped checks** across four domains: System, Services, Packages, Desktop.
 - **Four status levels:** `OK`, `WARN`, `FAIL`, `SKIP` (skipped when a check
   doesn't apply to your environment).
@@ -66,8 +68,8 @@ Output is colorized when writing to a terminal, and plain when piped or when
 - **Optional configuration:** a TOML file tunes thresholds and per-check
   modes (see [Configuration](#configuration)).
 - **Small and dependency-light:** Rust std + POSIX, with `libc`, `serde`, and
-  `toml` as the only crates (optionally libsystemd and libalpm for the service and package checks - see
-  [Build options](#build-options)).
+  `toml` as the only crates (optionally libsystemd and libalpm for the service
+  and package checks - see [Build options](#build-options)).
 
 ### Checks
 
@@ -239,15 +241,15 @@ fi
 }
 ```
 
-- `status` — overall status, the worst present (`fail` > `warn` > `ok`).
+- `status` - overall status, the worst present (`fail` > `warn` > `ok`).
   Not affected by `--strict` (only the exit code is).
-- `summary` — counts per status level.
-- `groups[].name` — the group label (`System`, `Services`, `Packages`, `Desktop`).
-- `groups[].checks[]` — individual results:
-  - `id` — stable machine-readable identifier (see the checks table).
-  - `status` — `ok` | `warn` | `fail` | `skip`.
-  - `message` — short human-readable summary.
-  - `detail` — optional extra context; only present when non-empty.
+- `summary` - counts per status level.
+- `groups[].name` - the group label (`System`, `Services`, `Packages`, `Desktop`).
+- `groups[].checks[]` - individual results:
+  - `id` - stable machine-readable identifier (see the checks table).
+  - `status` - `ok` | `warn` | `fail` | `skip`.
+  - `message` - short human-readable summary.
+  - `detail` - optional extra context; only present when non-empty.
 
 A complete sample is in [`examples/sample-output.json`](examples/sample-output.json).
 
@@ -270,6 +272,7 @@ The code is a small multi-module Rust crate:
 ```
 src/model.rs   core result/summary types
 src/cli.rs     argument parsing and dispatch
+src/config.rs  config file parsing and validation
 src/output/    text and JSON renderers
 src/checks/    one module per check group (system, services, packages, desktop)
 src/util/      exec, fs, and string helpers
@@ -278,9 +281,10 @@ tests/         integration tests (JSON + text goldens against examples/, CLI)
 
 The crate dependencies are `libc`, `serde`, and `toml`. `libc` covers the
 handful of syscalls std does not expose (`uname`, `statvfs`, `glob`, `access`);
-`serde` and `toml` parse the config file (`src/config.rs`). The optional `libsystemd`
-and `libalpm` features link those system libraries through small hand-written
-FFI modules (`src/checks/services_sdbus.rs`, `src/checks/packages_alpm.rs`).
+`serde` and `toml` parse the config file (`src/config.rs`). The optional
+`libsystemd` and `libalpm` features link those system libraries through small
+hand-written FFI modules (`src/checks/services_sdbus.rs`,
+`src/checks/packages_alpm.rs`).
 
 ---
 
@@ -293,7 +297,7 @@ Planned work is tracked in the [issue tracker](https://github.com/pablofc18/osdo
 - [Plugin-style external checks](https://github.com/pablofc18/osdoctor/issues/5)
 - [TUI mode](https://github.com/pablofc18/osdoctor/issues/6)
 - [HTML report exporter](https://github.com/pablofc18/osdoctor/issues/7)
-- [Opt-in fix suggestions](https://github.com/pablofc18/osdoctor/issues/8) — still read-only by default.
+- [Opt-in fix suggestions](https://github.com/pablofc18/osdoctor/issues/8) - still read-only by default.
 - [AUR package](https://github.com/pablofc18/osdoctor/issues/9)
 
 ---
@@ -305,7 +309,7 @@ Planned work is tracked in the [issue tracker](https://github.com/pablofc18/osdo
 - **No root required** for normal scans.
 - Some checks **skip** themselves cleanly when they don't apply (e.g. no
   Hyprland session, no pacman, no systemd user bus).
-- Commands are run with fixed, hard-coded argument lists — no user-controlled
+- Commands are run with fixed, hard-coded argument lists - no user-controlled
   input is ever passed to a shell.
 
 ---

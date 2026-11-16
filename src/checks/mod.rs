@@ -111,17 +111,11 @@ mod tests {
         }
     }
 
-    fn cfg_off(except: &[&str], only_off: &[&str]) -> Config {
+    /// A config with every check in `ids` turned off.
+    fn cfg_off<'a>(ids: impl IntoIterator<Item = &'a str>) -> Config {
         let mut cfg = Config::default();
-        for id in CHECK_IDS {
-            let off = if only_off.is_empty() {
-                !except.contains(&id)
-            } else {
-                only_off.contains(&id)
-            };
-            if off {
-                cfg.checks.insert(id.to_string(), Mode::Off);
-            }
+        for id in ids {
+            cfg.checks.insert(id.to_string(), Mode::Off);
         }
         cfg
     }
@@ -129,7 +123,7 @@ mod tests {
     #[test]
     fn off_checks_do_not_run_or_report() {
         let _env = crate::ENV_MUTEX.lock().unwrap();
-        let cfg = cfg_off(&["tmp-writable"], &[]);
+        let cfg = cfg_off(CHECK_IDS.into_iter().filter(|&id| id != "tmp-writable"));
         let mut results = Vec::new();
         run_all(&mut results, &cfg);
         assert_eq!(results.len(), 1);
@@ -139,15 +133,12 @@ mod tests {
     #[test]
     fn all_checks_off_in_group_removes_group() {
         let _env = crate::ENV_MUTEX.lock().unwrap();
-        let cfg = cfg_off(
-            &[],
-            &[
-                "kernel-version",
-                "root-disk-space",
-                "tmp-writable",
-                "memory-info",
-            ],
-        );
+        let cfg = cfg_off([
+            "kernel-version",
+            "root-disk-space",
+            "tmp-writable",
+            "memory-info",
+        ]);
         let mut results = Vec::new();
         run_all(&mut results, &cfg);
         assert!(results.iter().all(|r| r.group != "System"));

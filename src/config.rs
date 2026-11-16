@@ -4,7 +4,7 @@
 
 use crate::checks::CHECK_IDS;
 use crate::model::{CheckResult, CheckStatus};
-use crate::util::fs::{config_home, display_path, file_exists, join_path};
+use crate::util::fs::{config_home, display_path, join_path};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -89,7 +89,8 @@ impl Config {
     pub fn parse(text: &str, path: &str) -> Result<Config, ConfigError> {
         let shown = display_path(path);
         let err = |msg: String| ConfigError(format!("{shown}: {msg}"));
-        let raw: RawConfig = toml::from_str(text).map_err(|e| err(e.to_string()))?;
+        let raw: RawConfig =
+            toml::from_str(text).map_err(|e| err(e.to_string().trim_end().to_string()))?;
 
         let mut config = Config::default();
         let line = |s: &std::ops::Range<usize>| line_of(text, s.start);
@@ -154,21 +155,23 @@ impl Config {
     /// `$XDG_CONFIG_HOME/osdoctor/config.toml` (defaults if it does not exist).
     pub fn load(explicit: Option<&str>) -> Result<Config, ConfigError> {
         match explicit {
-            Some(p) => Self::read(p),
-            None => {
-                let p = join_path(&config_home(), "osdoctor/config.toml");
-                if file_exists(&p) {
-                    Self::read(&p)
-                } else {
-                    Ok(Config::default())
-                }
-            }
+            Some(p) => Self::read(p, false),
+            None => Self::read(&join_path(&config_home(), "osdoctor/config.toml"), true),
         }
     }
 
-    fn read(path: &str) -> Result<Config, ConfigError> {
+    /// Read and parse `path`. With `missing_ok`, a file that does not exist
+    /// means defaults; any other failure (permissions, a directory, bad
+    /// UTF-8) is always an error, so a config is never silently ignored.
+    fn read(path: &str, missing_ok: bool) -> Result<Config, ConfigError> {
         let fail = |e: &dyn fmt::Display| ConfigError(format!("{}: {e}", display_path(path)));
-        let bytes = std::fs::read(path).map_err(|e| fail(&e))?;
+        let bytes = match std::fs::read(path) {
+            Ok(b) => b,
+            Err(e) if missing_ok && e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Config::default())
+            }
+            Err(e) => return Err(fail(&e)),
+        };
         let text = String::from_utf8(bytes).map_err(|e| fail(&e))?;
         Self::parse(&text, path)
     }
@@ -259,6 +262,7 @@ mod tests {
         let e = Config::parse("[thresholds\n", P).unwrap_err().0;
         assert!(e.starts_with("/cfg/config.toml: "), "{e}");
         assert!(e.contains("line 1"), "{e}");
+        assert!(!e.ends_with('\n'), "{e:?}");
     }
 
     #[test]
@@ -401,6 +405,19 @@ mod tests {
         std::fs::write(&file, "[checks]\npacman-log = \"off\"\n").unwrap();
         let present = Config::load(None);
 
+        // A directory that cannot be searched hides whether the file exists;
+        // that is an error, not "no config" (root bypasses permissions).
+        let perms = |mode| {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(dir.join("osdoctor"), std::fs::Permissions::from_mode(mode))
+                .unwrap()
+        };
+        perms(0o000);
+        // SAFETY: geteuid has no preconditions.
+        let is_root = unsafe { libc::geteuid() } == 0;
+        let hidden = Config::load(None);
+        perms(0o755);
+
         std::fs::remove_file(&file).unwrap();
         std::fs::create_dir(&file).unwrap();
         let unreadable = Config::load(None);
@@ -413,6 +430,7 @@ mod tests {
 
         assert_eq!(missing, Ok(Config::default()));
         assert_eq!(present.unwrap().checks.get("pacman-log"), Some(&Mode::Off));
+        assert!(is_root || hidden.is_err(), "{hidden:?}");
         assert!(unreadable.is_err());
     }
 }

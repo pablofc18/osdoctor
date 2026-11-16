@@ -3,32 +3,49 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// A fresh empty directory under the system temp dir, unique per call.
-fn temp_dir() -> PathBuf {
-    static COUNTER: AtomicUsize = AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "osdoctor-test-{}-{}",
-        std::process::id(),
-        COUNTER.fetch_add(1, Ordering::SeqCst)
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+/// A fresh empty directory under the system temp dir, removed on drop.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new() -> TempDir {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "osdoctor-test-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::SeqCst)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        TempDir(dir)
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for TempDir {
+    type Target = Path;
+    fn deref(&self) -> &Path {
+        &self.0
+    }
 }
 
 /// The binary, isolated from the developer's real config: HOME and
-/// XDG_CONFIG_HOME point at a fresh empty directory. Tests that need a config
-/// override these with a later `.env`.
+/// XDG_CONFIG_HOME point at a directory that does not exist, so no config
+/// file is found. Tests that need a config use `bin_in`.
 fn bin() -> Command {
-    let dir = temp_dir();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_osdoctor"));
-    cmd.env("HOME", &dir).env("XDG_CONFIG_HOME", &dir);
+    cmd.env("HOME", "/nonexistent")
+        .env("XDG_CONFIG_HOME", "/nonexistent");
     cmd
 }
 
-/// A fresh config home; returns (home dir, path of its default config file).
-fn config_home_with(contents: &str) -> (PathBuf, PathBuf) {
-    let dir = temp_dir();
+/// A fresh config home; returns it and the path of its default config file.
+fn config_home_with(contents: &str) -> (TempDir, PathBuf) {
+    let dir = TempDir::new();
     let cfg_dir = dir.join("osdoctor");
     std::fs::create_dir_all(&cfg_dir).unwrap();
     let file = cfg_dir.join("config.toml");
@@ -182,7 +199,7 @@ fn invalid_config_exits_three_with_path() {
 
 #[test]
 fn missing_explicit_config_exits_three() {
-    let home = temp_dir();
+    let home = TempDir::new();
     let out = bin_in(&home)
         .args(["scan", "--config"])
         .arg(home.join("nope.toml"))
