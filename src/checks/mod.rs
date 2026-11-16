@@ -1,4 +1,4 @@
-//! Check group runners + orchestration (replaces checks.h + run_all_checks).
+//! Check group runners and the full-scan orchestration.
 
 pub mod desktop;
 pub mod packages;

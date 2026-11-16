@@ -1,5 +1,5 @@
-//! libalpm backend for the orphan-package check (replaces
-//! check_packages_alpm.c). Compiled only with the `libalpm` cargo feature.
+//! libalpm backend for the orphan-package check. Compiled only with the
+//! `libalpm` cargo feature.
 //! Reads the local pacman database directly instead of shelling out to
 //! `pacman -Qdtq`. A package is an orphan when it was installed as a dependency
 //! and nothing (neither a hard dependency nor an optional one) still requires
@@ -55,7 +55,7 @@ extern "C" {
     fn alpm_pkg_compute_optionalfor(pkg: *mut AlpmPkg) -> *mut AlpmList;
 }
 
-/// Releases the libalpm handle on drop (the `finish:` label of the C backend).
+/// Releases the libalpm handle on drop, so every early return cleans up.
 struct Handle(*mut AlpmHandle);
 
 impl Drop for Handle {

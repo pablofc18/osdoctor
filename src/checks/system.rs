@@ -1,4 +1,4 @@
-//! System checks (replaces check_system.c): kernel, root disk, /tmp, memory.
+//! System checks: kernel, root disk space, /tmp writability, memory.
 //! Uses libc uname/statvfs and /proc/meminfo; never shells out.
 
 use crate::model::{CheckResult, CheckStatus};

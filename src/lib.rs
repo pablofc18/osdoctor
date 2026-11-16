@@ -1,5 +1,4 @@
-//! osdoctor — Linux desktop health checks for Arch/Hyprland systems.
-#![allow(clippy::uninlined_format_args)]
+//! osdoctor - Linux desktop health checks for Arch/Hyprland systems.
 
 pub mod checks;
 pub mod cli;

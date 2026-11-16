@@ -1,5 +1,5 @@
-//! Desktop checks (replaces check_desktop.c): Wayland session, Hyprland socket,
-//! Hyprland binds (hypr), and Waybar scripts (waybar).
+//! Desktop checks: Wayland session, Hyprland socket, Hyprland binds (hypr),
+//! and Waybar scripts (waybar).
 
 pub(crate) mod hypr;
 pub(crate) mod waybar;

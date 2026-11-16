@@ -1,5 +1,5 @@
-//! sd-bus (libsystemd) backend for the Services checks (replaces
-//! check_services_sdbus.c). Compiled only with the `libsystemd` cargo feature.
+//! sd-bus (libsystemd) backend for the Services checks. Compiled only with the
+//! `libsystemd` cargo feature.
 //! Queries the systemd manager directly over D-Bus instead of shelling out to
 //! systemctl:
 //!
@@ -68,8 +68,8 @@ fn cstr(bytes: &'static [u8]) -> *const c_char {
     bytes.as_ptr().cast()
 }
 
-/// Owns the bus connection, reply and error, releasing them on drop (the
-/// `finish:` label of the C backend).
+/// Owns the bus connection, reply and error, releasing them on drop, so every
+/// early return cleans up.
 struct Session {
     bus: *mut SdBus,
     reply: *mut SdBusMessage,

@@ -1,5 +1,5 @@
-//! Core result/summary types and helpers (replaces osdoctor.h + the
-//! result/summary/status logic of checks.c).
+//! Core types: a check result, its status, the summary of a run, and the
+//! mapping from a summary to the overall status and process exit code.
 
 /// Program version, sourced from Cargo so it cannot drift from the manifest.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
