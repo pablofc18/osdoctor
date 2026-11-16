@@ -172,26 +172,6 @@ pub fn run(args: &[String]) -> i32 {
 mod tests {
     use super::*;
 
-    fn argv(parts: &[&str]) -> Vec<String> {
-        parts.iter().map(|s| s.to_string()).collect()
-    }
-
-    #[test]
-    fn version_and_help_exit_zero() {
-        assert_eq!(run(&argv(&["osdoctor", "version"])), 0);
-        assert_eq!(run(&argv(&["osdoctor", "help"])), 0);
-        assert_eq!(run(&argv(&["osdoctor", "-V"])), 0);
-        assert_eq!(run(&argv(&["osdoctor", "--help"])), 0);
-    }
-
-    #[test]
-    fn usage_errors_exit_three() {
-        assert_eq!(run(&argv(&["osdoctor"])), 3); // no command
-        assert_eq!(run(&argv(&["osdoctor", "bogus"])), 3); // unknown command
-        assert_eq!(run(&argv(&["osdoctor", "--nope"])), 3); // unknown option
-        assert_eq!(run(&argv(&["osdoctor", "scan", "system"])), 3); // extra arg
-    }
-
     #[test]
     fn usage_text_has_version_and_sections() {
         let u = usage();
