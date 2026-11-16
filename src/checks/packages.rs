@@ -1,4 +1,4 @@
-//! Packages checks (replaces check_packages.c): pacman db lock, log, and orphan
+//! Packages checks: pacman db lock, log, and orphan
 //! packages.
 //!
 //! The orphan-package lookup sits behind a small backend seam. `query_pacman`
@@ -15,10 +15,14 @@ use crate::util::strings::Detail;
 const GROUP: &str = "Packages";
 pub(crate) const DETAIL_CAP: usize = 1024;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum QueryStatus {
+    /// Authoritative answer: `count` and `detail` are filled.
     Ok,
+    /// The backend cannot run (pacman not installed, libalpm init failed).
     Unavailable,
+    /// pacman ran but failed; `detail` holds its first error line.
+    Failed,
 }
 
 pub struct Query {
@@ -28,6 +32,16 @@ pub struct Query {
 }
 
 pub fn emit(results: &mut Vec<CheckResult>, q: &Query) {
+    if q.status == QueryStatus::Failed {
+        results.push(CheckResult::new(
+            "orphan-packages",
+            GROUP,
+            CheckStatus::Skip,
+            "Could not query orphan packages",
+            q.detail.clone(),
+        ));
+        return;
+    }
     if q.status == QueryStatus::Unavailable {
         results.push(CheckResult::new(
             "orphan-packages",
@@ -58,22 +72,33 @@ pub fn emit(results: &mut Vec<CheckResult>, q: &Query) {
     ));
 }
 
-fn query_pacman() -> Query {
-    if !is_executable_in_path("pacman") {
+/// Turn a `pacman -Qdtq` result into a Query. pacman exits 0 and lists the
+/// orphans, or exits 1 silently when there are none. Any other outcome (a
+/// non-zero exit with an error on stderr, another exit code, or no exit code)
+/// is a failure, not "no orphans".
+fn classify(code: Option<i32>, stdout: &str, stderr: &str) -> Query {
+    let clean_none = code == Some(1) && stdout.trim().is_empty() && stderr.trim().is_empty();
+    if code != Some(0) && !clean_none {
+        // Prefer pacman's "error: ..." line over any preceding warnings.
+        let mut lines = stderr.lines().map(str::trim).filter(|l| !l.is_empty());
+        let reason = lines
+            .clone()
+            .find(|l| l.starts_with("error:"))
+            .or_else(|| lines.next())
+            .map(str::to_string)
+            .unwrap_or_else(|| match code {
+                Some(c) => format!("pacman -Qdtq exited with status {c}"),
+                None => "pacman -Qdtq was terminated".to_string(),
+            });
         return Query {
-            status: QueryStatus::Unavailable,
+            status: QueryStatus::Failed,
             count: 0,
-            detail: String::new(),
+            detail: reason,
         };
     }
-    let (out, _code) = run_capture("pacman", &["-Qdtq"]);
     let mut detail = Detail::new(DETAIL_CAP);
     let mut n = 0;
-    for line in out.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
+    for line in stdout.lines().map(str::trim).filter(|l| !l.is_empty()) {
         n += 1;
         detail.append(line);
     }
@@ -82,6 +107,18 @@ fn query_pacman() -> Query {
         count: n,
         detail: detail.into_string(),
     }
+}
+
+fn query_pacman() -> Query {
+    if !is_executable_in_path("pacman") {
+        return Query {
+            status: QueryStatus::Unavailable,
+            count: 0,
+            detail: String::new(),
+        };
+    }
+    let c = run_capture("pacman", &["-Qdtq"]);
+    classify(c.code, &c.stdout, &c.stderr)
 }
 
 /// Enumerate orphans, preferring libalpm when compiled in. An Ok result is
@@ -201,5 +238,45 @@ mod tests {
         );
         assert_eq!(last(&r).status, CheckStatus::Skip);
         assert_eq!(last(&r).message, "pacman not available");
+    }
+
+    #[test]
+    fn emit_failed_is_skip_with_reason() {
+        let mut r = Vec::new();
+        emit(
+            &mut r,
+            &Query {
+                status: QueryStatus::Failed,
+                count: 0,
+                detail: "error: database broken".into(),
+            },
+        );
+        assert_eq!(last(&r).status, CheckStatus::Skip);
+        assert_eq!(last(&r).message, "Could not query orphan packages");
+        assert_eq!(last(&r).detail, "error: database broken");
+    }
+
+    #[test]
+    fn classify_pacman_outcomes() {
+        // Orphans listed (exit 0).
+        let q = classify(Some(0), "a\n\nb\n", "");
+        assert_eq!(
+            (q.status, q.count, q.detail.as_str()),
+            (QueryStatus::Ok, 2, "a, b")
+        );
+
+        // No orphans: pacman exits 1 without output.
+        let q = classify(Some(1), "", "");
+        assert_eq!((q.status, q.count), (QueryStatus::Ok, 0));
+
+        // Failures are not "no orphans".
+        let q = classify(Some(1), "", "warning: x\nerror: database broken\n");
+        assert_eq!(q.status, QueryStatus::Failed);
+        assert_eq!(q.detail, "error: database broken");
+        let q = classify(Some(2), "", "");
+        assert_eq!(q.status, QueryStatus::Failed);
+        assert_eq!(q.detail, "pacman -Qdtq exited with status 2");
+        let q = classify(None, "", "");
+        assert_eq!(q.status, QueryStatus::Failed);
     }
 }

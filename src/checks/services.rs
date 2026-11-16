@@ -1,4 +1,4 @@
-//! Services checks (replaces check_services.c): failed system/user units.
+//! Services checks: failed system/user units.
 //!
 //! The failed-unit lookup sits behind a small backend seam. `query_systemctl`
 //! runs `systemctl --failed` (fixed argument list, stderr discarded). When
@@ -34,7 +34,8 @@ pub struct Query {
     pub detail: String,
 }
 
-/// Translate a backend query result into a check result (wording matches the C).
+/// Translate a backend query result into a check result. Both backends share
+/// this wording, so the output does not depend on how the build was configured.
 pub fn emit(results: &mut Vec<CheckResult>, scope: Scope, q: &Query) {
     let id = match scope {
         Scope::System => "failed-system-services",
@@ -133,8 +134,8 @@ fn query_systemctl(scope: Scope) -> Query {
         Scope::System => &["--failed", "--no-legend", "--plain"],
         Scope::User => &["--user", "--failed", "--no-legend", "--plain"],
     };
-    let (out, code) = run_capture("systemctl", args);
-    classify(code, &out)
+    let c = run_capture("systemctl", args);
+    classify(c.code, &c.stdout)
 }
 
 /// Query one scope, preferring sd-bus when compiled in. Ok and NoSession are
