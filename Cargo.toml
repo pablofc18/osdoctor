@@ -2,7 +2,7 @@
 name = "osdoctor"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.85"
 license = "MIT"
 description = "Linux desktop health checks for Arch/Hyprland systems"
 repository = "https://github.com/pablofc18/osdoctor"
@@ -17,6 +17,8 @@ path = "src/main.rs"
 
 [dependencies]
 libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+toml = { version = "1", default-features = false, features = ["std", "serde", "parse"] }
 
 # Optional direct-library backends (off by default, so the default build links
 # only libc). Each is tried first and falls back to the CLI tool at runtime on

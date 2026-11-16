@@ -47,11 +47,79 @@ Emit results as a JSON document instead of the human-readable report.
 Treat warnings as failures for the purpose of the exit code. The displayed
 status labels are unchanged.
 .TP
+.BI \-\-config " PATH"
+Read configuration from
+.I PATH
+instead of the default file. A missing or invalid file is an error. Use
+.B \-\-config /dev/null
+to force the defaults. May be given once.
+.TP
 .B \-h ", " \-\-help
 Print usage information and exit.
 .TP
 .B \-V ", " \-\-version
 Print the version and exit.
+.SH CONFIGURATION
+osdoctor reads an optional TOML file,
+.I $XDG_CONFIG_HOME/osdoctor/config.toml
+(default
+.IR ~/.config/osdoctor/config.toml ),
+or the file given with
+.BR \-\-config .
+Every key is optional, and a missing default file means defaults. Example:
+.PP
+.nf
+.RS
+# ~/.config/osdoctor/config.toml - every key is optional.
+
+[thresholds]
+disk_warn_gb = 10          # WARN when / has less free space than this
+disk_fail_gb = 2           # FAIL when / has less free space than this
+memory_warn_percent = 10   # WARN when less than this % of memory is available
+
+[checks]
+# <check-id> = "off" | "warn" | "fail"
+#   off   the check does not run and is not reported
+#   warn  a WARN or FAIL result from this check is reported as WARN
+#   fail  a WARN or FAIL result from this check is reported as FAIL
+waybar-scripts = "warn"
+# pacman-log = "off"
+.RE
+.fi
+.PP
+Each key in
+.B [checks]
+is a check ID and takes one of three modes:
+.B off
+(the check does not run and is not reported),
+.B warn
+(a WARN or FAIL result is reported as WARN), or
+.B fail
+(a WARN or FAIL result is reported as FAIL). OK and SKIP results are never
+changed. The
+.B \-\-strict
+flag is applied after the modes.
+.PP
+The
+.B [thresholds]
+keys and their defaults are:
+.B disk_warn_gb
+(10),
+.B disk_fail_gb
+(2), and
+.B memory_warn_percent
+(10).
+.PP
+Invalid configuration (a missing
+.B \-\-config
+file, a syntax error, an unknown key or check ID, or a bad value) is reported
+as
+.RI \(lq "osdoctor: message" \(rq
+on standard error and exits with status 3. The
+.B help
+and
+.B version
+commands never read the configuration.
 .SH "CHECK STATUS LEVELS"
 Each check reports one of:
 .B OK
@@ -98,6 +166,9 @@ against it, as Hyprland runs them from the home directory.
 If set, disables colorized output. Color is also disabled automatically when
 standard output is not a terminal.
 .SH FILES
+.TP
+.I $XDG_CONFIG_HOME/osdoctor/config.toml
+Optional configuration file (see CONFIGURATION).
 .TP
 .I $XDG_CONFIG_HOME/hypr/hyprland.conf
 Parsed for \fBexec\fR bind commands, including any files pulled in with

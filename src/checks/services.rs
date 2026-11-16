@@ -7,6 +7,7 @@
 //! systemctl only on a hard bus error. `emit` turns either backend's result
 //! into the check output, so both share wording.
 
+use crate::config::Config;
 use crate::model::{CheckResult, CheckStatus};
 use crate::util::exec::run_capture;
 use crate::util::fs::is_executable_in_path;
@@ -152,9 +153,13 @@ fn query(scope: Scope) -> Query {
     query_systemctl(scope)
 }
 
-pub fn run(results: &mut Vec<CheckResult>) {
-    emit(results, Scope::System, &query(Scope::System));
-    emit(results, Scope::User, &query(Scope::User));
+pub fn run(results: &mut Vec<CheckResult>, cfg: &Config) {
+    if cfg.enabled("failed-system-services") {
+        emit(results, Scope::System, &query(Scope::System));
+    }
+    if cfg.enabled("failed-user-services") {
+        emit(results, Scope::User, &query(Scope::User));
+    }
 }
 
 #[cfg(test)]

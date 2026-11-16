@@ -9,34 +9,59 @@ pub mod services;
 mod services_sdbus;
 pub mod system;
 
+use crate::config::Config;
 use crate::model::CheckResult;
 
-pub fn run_system(results: &mut Vec<CheckResult>) {
-    system::run(results);
+/// Every check ID, in report order.
+pub const CHECK_IDS: [&str; 13] = [
+    "kernel-version",
+    "root-disk-space",
+    "tmp-writable",
+    "memory-info",
+    "failed-system-services",
+    "failed-user-services",
+    "pacman-lock",
+    "pacman-log",
+    "orphan-packages",
+    "wayland-session",
+    "hyprland-socket",
+    "hyprland-binds",
+    "waybar-scripts",
+];
+
+pub fn run_system(results: &mut Vec<CheckResult>, cfg: &Config) {
+    system::run(results, cfg);
 }
 
-pub fn run_services(results: &mut Vec<CheckResult>) {
-    services::run(results);
+pub fn run_services(results: &mut Vec<CheckResult>, cfg: &Config) {
+    services::run(results, cfg);
 }
 
-pub fn run_packages(results: &mut Vec<CheckResult>) {
-    packages::run(results);
+pub fn run_packages(results: &mut Vec<CheckResult>, cfg: &Config) {
+    packages::run(results, cfg);
 }
 
-pub fn run_desktop(results: &mut Vec<CheckResult>) {
-    desktop::run(results);
+pub fn run_desktop(results: &mut Vec<CheckResult>, cfg: &Config) {
+    desktop::run(results, cfg);
 }
 
-pub fn run_all(results: &mut Vec<CheckResult>) {
-    system::run(results);
-    services::run(results);
-    packages::run(results);
-    desktop::run(results);
+pub fn run_all(results: &mut Vec<CheckResult>, cfg: &Config) {
+    system::run(results, cfg);
+    services::run(results, cfg);
+    packages::run(results, cfg);
+    desktop::run(results, cfg);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Mode;
+
+    #[test]
+    fn check_ids_are_unique() {
+        let set: std::collections::BTreeSet<&str> = CHECK_IDS.iter().copied().collect();
+        assert_eq!(set.len(), 13);
+    }
 
     // Orchestration contract: all four groups run, contiguously, in
     // System -> Services -> Packages -> Desktop order. The fixed-shape groups
@@ -53,7 +78,7 @@ mod tests {
         // set_var/getenv is undefined behaviour).
         let _env = crate::ENV_MUTEX.lock().unwrap();
         let mut results = Vec::new();
-        run_all(&mut results);
+        run_all(&mut results, &Config::default());
 
         let groups: Vec<&str> = results.iter().map(|r| r.group).collect();
         let mut order = Vec::new();
@@ -73,5 +98,52 @@ mod tests {
             "Desktop group had {} rows",
             count("Desktop")
         );
+    }
+
+    #[test]
+    fn every_emitted_id_is_known() {
+        let _env = crate::ENV_MUTEX.lock().unwrap();
+        let mut results = Vec::new();
+        run_all(&mut results, &Config::default());
+        assert!(!results.is_empty());
+        for r in &results {
+            assert!(CHECK_IDS.contains(&r.id), "unknown check id {}", r.id);
+        }
+    }
+
+    /// A config with every check in `ids` turned off.
+    fn cfg_off<'a>(ids: impl IntoIterator<Item = &'a str>) -> Config {
+        let mut cfg = Config::default();
+        for id in ids {
+            cfg.checks.insert(id.to_string(), Mode::Off);
+        }
+        cfg
+    }
+
+    #[test]
+    fn off_checks_do_not_run_or_report() {
+        let _env = crate::ENV_MUTEX.lock().unwrap();
+        let cfg = cfg_off(CHECK_IDS.into_iter().filter(|&id| id != "tmp-writable"));
+        let mut results = Vec::new();
+        run_all(&mut results, &cfg);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "tmp-writable");
+    }
+
+    #[test]
+    fn all_checks_off_in_group_removes_group() {
+        let _env = crate::ENV_MUTEX.lock().unwrap();
+        let cfg = cfg_off([
+            "kernel-version",
+            "root-disk-space",
+            "tmp-writable",
+            "memory-info",
+        ]);
+        let mut results = Vec::new();
+        run_all(&mut results, &cfg);
+        assert!(results.iter().all(|r| r.group != "System"));
+        let count = |name: &str| results.iter().filter(|r| r.group == name).count();
+        assert_eq!(count("Services"), 2);
+        assert_eq!(count("Packages"), 3);
     }
 }

@@ -7,6 +7,7 @@
 //! tried first, falling back to pacman only on a hard error. `emit` turns
 //! either backend's result into the check output, so both share wording.
 
+use crate::config::Config;
 use crate::model::{CheckResult, CheckStatus};
 use crate::util::exec::run_capture;
 use crate::util::fs::{file_exists, file_readable, is_executable_in_path};
@@ -134,7 +135,19 @@ fn query_orphans() -> Query {
     query_pacman()
 }
 
-pub fn run(results: &mut Vec<CheckResult>) {
+pub fn run(results: &mut Vec<CheckResult>, cfg: &Config) {
+    if cfg.enabled("pacman-lock") {
+        check_lock(results);
+    }
+    if cfg.enabled("pacman-log") {
+        check_log(results);
+    }
+    if cfg.enabled("orphan-packages") {
+        emit(results, &query_orphans());
+    }
+}
+
+fn check_lock(results: &mut Vec<CheckResult>) {
     if file_exists("/var/lib/pacman/db.lck") {
         results.push(CheckResult::new(
             "pacman-lock",
@@ -152,7 +165,9 @@ pub fn run(results: &mut Vec<CheckResult>) {
             "",
         ));
     }
+}
 
+fn check_log(results: &mut Vec<CheckResult>) {
     if file_readable("/var/log/pacman.log") {
         results.push(CheckResult::new(
             "pacman-log",
@@ -170,8 +185,6 @@ pub fn run(results: &mut Vec<CheckResult>) {
             "",
         ));
     }
-
-    emit(results, &query_orphans());
 }
 
 #[cfg(test)]

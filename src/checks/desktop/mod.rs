@@ -4,6 +4,7 @@
 pub(crate) mod hypr;
 pub(crate) mod waybar;
 
+use crate::config::Config;
 use crate::model::{CheckResult, CheckStatus};
 use crate::util::fs::file_exists;
 
@@ -84,9 +85,17 @@ fn check_hyprland_socket(results: &mut Vec<CheckResult>) {
     }
 }
 
-pub fn run(results: &mut Vec<CheckResult>) {
-    check_wayland(results);
-    check_hyprland_socket(results);
-    hypr::check_binds(results);
-    waybar::check_scripts(results);
+pub fn run(results: &mut Vec<CheckResult>, cfg: &Config) {
+    if cfg.enabled("wayland-session") {
+        check_wayland(results);
+    }
+    if cfg.enabled("hyprland-socket") {
+        check_hyprland_socket(results);
+    }
+    if cfg.enabled("hyprland-binds") {
+        hypr::check_binds(results);
+    }
+    if cfg.enabled("waybar-scripts") {
+        waybar::check_scripts(results);
+    }
 }

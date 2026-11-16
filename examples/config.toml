@@ -1,0 +1,14 @@
+# ~/.config/osdoctor/config.toml - every key is optional.
+
+[thresholds]
+disk_warn_gb = 10          # WARN when / has less free space than this
+disk_fail_gb = 2           # FAIL when / has less free space than this
+memory_warn_percent = 10   # WARN when less than this % of memory is available
+
+[checks]
+# <check-id> = "off" | "warn" | "fail"
+#   off   the check does not run and is not reported
+#   warn  a WARN or FAIL result from this check is reported as WARN
+#   fail  a WARN or FAIL result from this check is reported as FAIL
+waybar-scripts = "warn"
+# pacman-log = "off"

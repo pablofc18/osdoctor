@@ -95,11 +95,7 @@ pub fn query() -> Query {
     // free_list. Package names borrow from the cache, which outlives the loop.
     unsafe {
         let mut err: c_int = 0;
-        let raw = alpm_initialize(
-            b"/\0".as_ptr().cast(),
-            b"/var/lib/pacman/\0".as_ptr().cast(),
-            &mut err,
-        );
+        let raw = alpm_initialize(c"/".as_ptr(), c"/var/lib/pacman/".as_ptr(), &mut err);
         if raw.is_null() {
             return unavailable();
         }
