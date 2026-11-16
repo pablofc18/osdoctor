@@ -11,28 +11,38 @@ makedepends=('cargo')
 optdepends=('hyprland: Hyprland desktop/session checks'
             'waybar: Waybar configuration checks')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-# Replace with the real checksum for a tagged release, e.g. via `updpkgsums`.
 sha256sums=('SKIP')
 
 # Build with the sd-bus service backend and the libalpm package backend; both
 # systemd-libs and pacman are always present on Arch. The features are passed
-# to every cargo invocation so build and check test the same binary.
+# to every cargo invocation so build and check test the same code.
 _features=libsystemd,libalpm
+
+prepare() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
 
 build() {
     cd "$pkgname-$pkgver"
-    cargo build --release --locked --features "$_features"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --frozen --release --features "$_features"
 }
 
 check() {
     cd "$pkgname-$pkgver"
-    cargo test --release --locked --features "$_features"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo test --frozen --features "$_features"
 }
 
 package() {
     cd "$pkgname-$pkgver"
     install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
-    install -Dm644 "man/osdoctor.1" "$pkgdir/usr/share/man/man1/osdoctor.1"
+    install -Dm644 man/osdoctor.1 "$pkgdir/usr/share/man/man1/osdoctor.1"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 examples/config.toml "$pkgdir/usr/share/doc/$pkgname/config.toml"
 }

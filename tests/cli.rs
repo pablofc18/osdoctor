@@ -73,6 +73,21 @@ fn version_prints_exact_line() {
 }
 
 #[test]
+fn short_and_long_aliases_match_commands() {
+    for (alias, cmd) in [
+        ("-V", "version"),
+        ("--version", "version"),
+        ("-h", "help"),
+        ("--help", "help"),
+    ] {
+        let a = bin().arg(alias).output().unwrap();
+        let c = bin().arg(cmd).output().unwrap();
+        assert_eq!(a.status.code(), Some(0), "{alias}");
+        assert_eq!(a.stdout, c.stdout, "{alias}");
+    }
+}
+
+#[test]
 fn help_mentions_usage() {
     let out = bin().arg("help").output().unwrap();
     assert!(out.status.success());
@@ -93,9 +108,19 @@ fn scan_json_is_well_formed() {
 }
 
 #[test]
-fn unknown_command_exits_three() {
-    let out = bin().arg("bogus").output().unwrap();
-    assert_eq!(out.status.code(), Some(3));
+fn usage_errors_exit_three() {
+    let cases: [&[&str]; 4] = [
+        &[],                 // no command
+        &["bogus"],          // unknown command
+        &["--nope"],         // unknown option
+        &["scan", "system"], // extra argument
+    ];
+    for args in cases {
+        let out = bin().args(args).output().unwrap();
+        assert_eq!(out.status.code(), Some(3), "{args:?}");
+        assert!(out.stdout.is_empty(), "{args:?}");
+        assert!(out.stderr.starts_with(b"osdoctor: "), "{args:?}");
+    }
 }
 
 /// A Stdio whose read end is already closed, so every write fails with EPIPE
