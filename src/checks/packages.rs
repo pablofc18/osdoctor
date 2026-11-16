@@ -64,12 +64,14 @@ pub fn emit(results: &mut Vec<CheckResult>, q: &Query) {
         return;
     }
     let plural = if q.count == 1 { "" } else { "s" };
-    results.push(CheckResult::new(
+    results.push(CheckResult::problem(
         "orphan-packages",
         GROUP,
         CheckStatus::Warn,
         format!("{} orphan package{plural} detected", q.count),
         q.detail.clone(),
+        "These packages were installed as dependencies and no installed package needs them \
+anymore. Review the list before removing any: some may be tools you use directly.",
     ));
 }
 
@@ -148,42 +150,58 @@ pub fn run(results: &mut Vec<CheckResult>, cfg: &Config) {
 }
 
 fn check_lock(results: &mut Vec<CheckResult>) {
-    if file_exists("/var/lib/pacman/db.lck") {
-        results.push(CheckResult::new(
+    results.push(lock_result(file_exists("/var/lib/pacman/db.lck")));
+}
+
+/// The pacman-lock row for whether /var/lib/pacman/db.lck exists.
+fn lock_result(locked: bool) -> CheckResult {
+    if locked {
+        CheckResult::problem(
             "pacman-lock",
             GROUP,
             CheckStatus::Fail,
             "pacman database is locked (db.lck present)",
-            "Remove /var/lib/pacman/db.lck only if no pacman process is running.",
-        ));
+            "",
+            "A package manager is running right now, or pacman crashed or was interrupted and \
+left its lock file /var/lib/pacman/db.lck behind. If no pacman, yay or other package manager \
+is running, the lock is stale and can be removed as root. Never remove it while one is running.",
+        )
     } else {
-        results.push(CheckResult::new(
+        CheckResult::new(
             "pacman-lock",
             GROUP,
             CheckStatus::Ok,
             "pacman database is unlocked",
             "",
-        ));
+        )
     }
 }
 
 fn check_log(results: &mut Vec<CheckResult>) {
-    if file_readable("/var/log/pacman.log") {
-        results.push(CheckResult::new(
+    results.push(log_result(file_readable("/var/log/pacman.log")));
+}
+
+/// The pacman-log row for whether /var/log/pacman.log is readable.
+fn log_result(readable: bool) -> CheckResult {
+    if readable {
+        CheckResult::new(
             "pacman-log",
             GROUP,
             CheckStatus::Ok,
             "pacman log exists",
             "",
-        ));
+        )
     } else {
-        results.push(CheckResult::new(
+        CheckResult::problem(
             "pacman-log",
             GROUP,
             CheckStatus::Warn,
             "pacman log missing or unreadable",
             "",
-        ));
+            "pacman records every install, upgrade and removal in /var/log/pacman.log, which \
+is useful when tracking down what changed. Check whether the file was deleted, lost its read \
+permission, or whether LogFile in /etc/pacman.conf points somewhere else.",
+        )
     }
 }
 
@@ -267,6 +285,32 @@ mod tests {
         assert_eq!(last(&r).status, CheckStatus::Skip);
         assert_eq!(last(&r).message, "Could not query orphan packages");
         assert_eq!(last(&r).detail, "error: database broken");
+    }
+
+    #[test]
+    fn pacman_lock_advice_is_an_explanation() {
+        let r = lock_result(true);
+        assert_eq!(r.status, CheckStatus::Fail);
+        assert_eq!(r.detail, "");
+        assert!(r.explain.contains("Never remove it while"), "{}", r.explain);
+        assert_eq!(lock_result(false).status, CheckStatus::Ok);
+    }
+
+    #[test]
+    fn warnings_carry_explanations() {
+        let mut r = Vec::new();
+        emit(
+            &mut r,
+            &Query {
+                status: QueryStatus::Ok,
+                count: 2,
+                detail: "a, b".into(),
+            },
+        );
+        assert!(last(&r).explain.contains("Review the list"));
+        let r = log_result(false);
+        assert_eq!(r.status, CheckStatus::Warn);
+        assert!(r.explain.contains("/var/log/pacman.log"), "{}", r.explain);
     }
 
     #[test]

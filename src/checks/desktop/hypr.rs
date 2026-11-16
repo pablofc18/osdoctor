@@ -297,12 +297,16 @@ pub fn check_binds(results: &mut Vec<CheckResult>) {
         return;
     }
     for m in &scan.missing {
-        results.push(CheckResult::new(
+        results.push(CheckResult::problem(
             "hyprland-binds",
             GROUP,
             CheckStatus::Warn,
             format!("Hyprland bind references missing command: {m}"),
             "",
+            "A key binding in your Hyprland config (hyprland.conf or a file it sources) runs \
+a program that was not found on PATH or at the path given, so the key likely does nothing. \
+Check that the program is installed and spelled correctly, including any $variable that \
+expands to it.",
         ));
     }
 }
@@ -463,6 +467,29 @@ mod tests {
         assert_eq!(scan.checked, 3);
         assert_eq!(scan.missing, vec!["~/bin".to_string()]);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn missing_command_row_is_explained() {
+        let _g = crate::ENV_MUTEX.lock().unwrap();
+        let dir = unique_dir("binds_explain");
+        std::fs::create_dir_all(dir.join("hypr")).unwrap();
+        write(
+            &dir.join("hypr/hyprland.conf"),
+            "bind = SUPER, A, exec, osd_bogus_explain_cmd\n",
+        );
+        let saved = std::env::var_os("XDG_CONFIG_HOME");
+        std::env::set_var("XDG_CONFIG_HOME", &dir);
+        let mut r = Vec::new();
+        check_binds(&mut r);
+        match saved {
+            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].status, CheckStatus::Warn);
+        assert!(r[0].explain.contains("PATH"), "{}", r[0].explain);
     }
 
     #[test]

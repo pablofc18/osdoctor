@@ -64,6 +64,8 @@ Output is colorized when writing to a terminal, and plain when piped or when
 - **Four status levels:** `OK`, `WARN`, `FAIL`, `SKIP` (skipped when a check
   doesn't apply to your environment).
 - **Script-friendly:** stable exit codes and `--json` output.
+- **`--explain`:** a short, fixed explanation under every warning and failure
+  (meaning, likely cause, what to check). Never commands; nothing is run.
 - **`--strict` mode** to treat warnings as failures in CI.
 - **Optional configuration:** a TOML file tunes thresholds and per-check
   modes (see [Configuration](#configuration)).
@@ -146,16 +148,29 @@ makepkg -si
 ## Usage
 
 ```sh
-osdoctor scan            # run all checks
-osdoctor scan --json     # machine-readable output
-osdoctor scan --strict   # warnings count as failures for the exit code
-osdoctor system          # only system checks
-osdoctor services        # only service checks
-osdoctor packages        # only package checks
-osdoctor desktop         # only desktop/session checks
-osdoctor scan --config PATH   # read configuration from PATH
+osdoctor scan                # run all checks
+osdoctor scan --json         # machine-readable output
+osdoctor scan --explain      # explain each warning and failure
+osdoctor scan --strict       # warnings count as failures for the exit code
+osdoctor system              # only system checks
+osdoctor services            # only service checks
+osdoctor packages            # only package checks
+osdoctor desktop             # only desktop/session checks
+osdoctor scan --config PATH  # read configuration from PATH
 osdoctor version
 osdoctor help
+```
+
+With `--explain`, each warning and failure gets a `?` line with a fixed
+explanation (wrapped at 80 columns):
+
+```
+Packages
+  ✗ pacman database is locked (db.lck present)
+      ? A package manager is running right now, or pacman crashed or was
+        interrupted and left its lock file /var/lib/pacman/db.lck behind. If no
+        pacman, yay or other package manager is running, the lock is stale and
+        can be removed as root. Never remove it while one is running.
 ```
 
 ---
@@ -250,6 +265,8 @@ fi
   - `status` - `ok` | `warn` | `fail` | `skip`.
   - `message` - short human-readable summary.
   - `detail` - optional extra context; only present when non-empty.
+  - `explain` - fixed explanation of the problem; present only with
+    `--explain`, and only on `warn`/`fail` checks.
 
 A complete sample is in [`examples/sample-output.json`](examples/sample-output.json).
 

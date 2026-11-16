@@ -271,3 +271,51 @@ fn dev_null_config_means_defaults() {
         .unwrap();
     assert!(String::from_utf8_lossy(&out.stdout).contains("kernel-version"));
 }
+
+const MEMORY_WARN_CONFIG: &str = "[checks]\nkernel-version = \"off\"\nroot-disk-space = \"off\"\ntmp-writable = \"off\"\n\n[thresholds]\nmemory_warn_percent = 100\n";
+
+#[test]
+fn explain_flag_shows_explanations() {
+    let (home, f) = config_home_with(MEMORY_WARN_CONFIG);
+    let run = |extra: &[&str]| {
+        let out = bin_in(&home)
+            .args(["system", "--config"])
+            .arg(&f)
+            .args(extra)
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    assert!(!run(&[]).lines().any(|l| l.starts_with("      ? ")));
+    assert!(run(&["--explain"])
+        .lines()
+        .any(|l| l.starts_with("      ? ")));
+    assert!(run(&["--explain", "--json"]).contains("\"explain\": \""));
+}
+
+#[test]
+fn explain_does_not_change_exit_code() {
+    let (home, f) = config_home_with(MEMORY_WARN_CONFIG);
+    let code = |extra: &[&str]| {
+        bin_in(&home)
+            .args(["system", "--config"])
+            .arg(&f)
+            .args(extra)
+            .output()
+            .unwrap()
+            .status
+            .code()
+    };
+    assert_eq!(code(&["--strict"]), Some(2));
+    assert_eq!(code(&["--strict", "--explain"]), Some(2));
+    assert_eq!(code(&[]), Some(1));
+    assert_eq!(code(&["--explain"]), Some(1));
+}
+
+#[test]
+fn explain_is_ignored_by_help_and_version() {
+    for cmd in ["help", "version"] {
+        let out = bin().args([cmd, "--explain"]).output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{cmd}");
+    }
+}

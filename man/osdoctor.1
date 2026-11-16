@@ -43,6 +43,16 @@ Print usage information and exit.
 .B \-\-json
 Emit results as a JSON document instead of the human-readable report.
 .TP
+.B \-\-explain
+Under each warning and failure, also show a short fixed explanation of what
+the problem means, its likely cause and what to look at. Only WARN and FAIL
+rows have one. With
+.B \-\-json
+each such check gains an
+.B explain
+field. The explanations are plain text, never commands, and osdoctor stays
+read-only. Without this option the output is unchanged.
+.TP
 .B \-\-strict
 Treat warnings as failures for the purpose of the exit code. The displayed
 status labels are unchanged.

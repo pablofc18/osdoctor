@@ -61,19 +61,28 @@ fn memory_low(avail_kb: u64, total_kb: u64, t: &Thresholds) -> bool {
     avail_kb.saturating_mul(100) < total_kb.saturating_mul(t.memory_warn_percent)
 }
 
-fn run_memory(results: &mut Vec<CheckResult>, t: &Thresholds) {
-    let content = match std::fs::read_to_string("/proc/meminfo") {
-        Ok(c) => c,
-        Err(_) => {
-            results.push(CheckResult::new(
-                "memory-info",
-                GROUP,
-                CheckStatus::Warn,
-                "Memory info unavailable (/proc/meminfo)",
-                "",
-            ));
-            return;
-        }
+const EXPLAIN_MEM_UNREADABLE: &str =
+    "/proc/meminfo could not be read, so available memory is unknown. \
+It is always present on a normal Linux system; its absence suggests /proc is not mounted \
+or access to it is restricted, for example in a sandbox.";
+const EXPLAIN_MEM_UNPARSEABLE: &str = "/proc/meminfo was read but has no MemTotal line in the \
+expected format, so available memory is unknown. This can happen with an unusual kernel or \
+a sandbox that replaces the file.";
+const EXPLAIN_MEM_LOW: &str = "Available memory is below the configured percentage of total \
+memory, so the system may slow down, swap heavily, or have programs killed when it runs out. \
+Look for programs using a lot of memory in a process monitor such as top or htop.";
+
+/// The memory-info row for the contents of /proc/meminfo (None = unreadable).
+fn memory_result(content: Option<&str>, t: &Thresholds) -> CheckResult {
+    let Some(content) = content else {
+        return CheckResult::problem(
+            "memory-info",
+            GROUP,
+            CheckStatus::Warn,
+            "Memory info unavailable (/proc/meminfo)",
+            "",
+            EXPLAIN_MEM_UNREADABLE,
+        );
     };
     let mut total_kb: Option<u64> = None;
     let mut avail_kb: Option<u64> = None;
@@ -87,39 +96,42 @@ fn run_memory(results: &mut Vec<CheckResult>, t: &Thresholds) {
             break;
         }
     }
-    let total_kb = match total_kb {
-        Some(t) => t,
-        None => {
-            results.push(CheckResult::new(
-                "memory-info",
-                GROUP,
-                CheckStatus::Warn,
-                "Could not parse /proc/meminfo",
-                "",
-            ));
-            return;
-        }
+    let Some(total_kb) = total_kb else {
+        return CheckResult::problem(
+            "memory-info",
+            GROUP,
+            CheckStatus::Warn,
+            "Could not parse /proc/meminfo",
+            "",
+            EXPLAIN_MEM_UNPARSEABLE,
+        );
     };
     let total_mb = total_kb / 1024;
     let avail = avail_kb.unwrap_or(0);
     let avail_mb = avail / 1024;
     if avail_kb.is_some() && total_kb > 0 && memory_low(avail, total_kb, t) {
-        results.push(CheckResult::new(
+        CheckResult::problem(
             "memory-info",
             GROUP,
             CheckStatus::Warn,
             format!("Low available memory: {avail_mb} MB of {total_mb} MB"),
             "",
-        ));
+            EXPLAIN_MEM_LOW,
+        )
     } else {
-        results.push(CheckResult::new(
+        CheckResult::new(
             "memory-info",
             GROUP,
             CheckStatus::Ok,
             format!("Memory: {avail_mb} MB available of {total_mb} MB"),
             "",
-        ));
+        )
     }
+}
+
+fn run_memory(results: &mut Vec<CheckResult>, t: &Thresholds) {
+    let content = std::fs::read_to_string("/proc/meminfo").ok();
+    results.push(memory_result(content.as_deref(), t));
 }
 
 pub fn run(results: &mut Vec<CheckResult>, cfg: &Config) {
@@ -146,36 +158,52 @@ fn run_kernel(results: &mut Vec<CheckResult>) {
             format!("Kernel detected: {release}"),
             format!("{sysname} {release} {version}"),
         )),
-        None => results.push(CheckResult::new(
+        None => results.push(CheckResult::problem(
             "kernel-version",
             GROUP,
             CheckStatus::Warn,
             "Could not read kernel version",
             "",
+            "osdoctor could not read the running kernel version from the system. This is \
+very unusual on Linux and suggests osdoctor is running inside a restricted sandbox.",
         )),
     }
 }
 
-fn run_disk(results: &mut Vec<CheckResult>, t: &Thresholds) {
-    match statvfs_free_bytes("/") {
-        Some(free_bytes) => {
-            let status = disk_status(free_bytes, t);
-            results.push(CheckResult::new(
-                "root-disk-space",
-                GROUP,
-                status,
-                format!("Root filesystem has {} GB free", free_bytes / GIB),
-                "",
-            ));
-        }
-        None => results.push(CheckResult::new(
+const EXPLAIN_DISK_LOW: &str = "The root filesystem has less free space than the configured \
+threshold. When it fills up, updates, logs and applications start failing. Look for large \
+files in your home directory, the pacman package cache in /var/cache/pacman/pkg and the \
+systemd journal.";
+
+/// The root-disk-space row for `free_bytes` free on / (None = statvfs failed).
+fn disk_result(free_bytes: Option<u64>, t: &Thresholds) -> CheckResult {
+    let Some(free_bytes) = free_bytes else {
+        return CheckResult::problem(
             "root-disk-space",
             GROUP,
             CheckStatus::Warn,
             "Could not stat root filesystem",
             "",
-        )),
+            "osdoctor could not read the free space of the root filesystem. This is unusual \
+and suggests / is not mounted normally, for example inside a restricted container or sandbox.",
+        );
+    };
+    let message = format!("Root filesystem has {} GB free", free_bytes / GIB);
+    match disk_status(free_bytes, t) {
+        CheckStatus::Ok => CheckResult::new("root-disk-space", GROUP, CheckStatus::Ok, message, ""),
+        status => CheckResult::problem(
+            "root-disk-space",
+            GROUP,
+            status,
+            message,
+            "",
+            EXPLAIN_DISK_LOW,
+        ),
     }
+}
+
+fn run_disk(results: &mut Vec<CheckResult>, t: &Thresholds) {
+    results.push(disk_result(statvfs_free_bytes("/"), t));
 }
 
 fn run_tmp(results: &mut Vec<CheckResult>) {
@@ -188,12 +216,15 @@ fn run_tmp(results: &mut Vec<CheckResult>) {
             "",
         ));
     } else {
-        results.push(CheckResult::new(
+        results.push(CheckResult::problem(
             "tmp-writable",
             GROUP,
             CheckStatus::Fail,
             "/tmp is not writable",
             "",
+            "Many programs create temporary files in /tmp and fail when they cannot. Check \
+that /tmp exists, is not mounted read-only, and keeps its usual permissions: writable by \
+everyone, with the sticky bit set.",
         ));
     }
 }
@@ -252,6 +283,45 @@ mod tests {
             ..t
         };
         assert!(!memory_low(0, 100, &t));
+    }
+
+    #[test]
+    fn disk_results_explain_problems() {
+        let t = Thresholds::default();
+        let ok = disk_result(Some(100 * GIB), &t);
+        assert_eq!((ok.status, ok.explain), (CheckStatus::Ok, ""));
+        let warn = disk_result(Some(2 * GIB), &t);
+        let fail = disk_result(Some(0), &t);
+        assert_eq!(warn.status, CheckStatus::Warn);
+        assert_eq!(fail.status, CheckStatus::Fail);
+        // One text per situation, whatever the severity.
+        assert_eq!(warn.explain, fail.explain);
+        assert!(warn.explain.contains("threshold"), "{}", warn.explain);
+        let unknown = disk_result(None, &t);
+        assert_eq!(unknown.status, CheckStatus::Warn);
+        assert_ne!(unknown.explain, warn.explain);
+    }
+
+    #[test]
+    fn memory_results_explain_each_situation() {
+        let t = Thresholds::default();
+        let ok = memory_result(Some("MemTotal: 1000 kB\nMemAvailable: 900 kB\n"), &t);
+        assert_eq!((ok.status, ok.explain), (CheckStatus::Ok, ""));
+        let low = memory_result(Some("MemTotal: 1000 kB\nMemAvailable: 10 kB\n"), &t);
+        let unreadable = memory_result(None, &t);
+        let garbled = memory_result(Some("nonsense\n"), &t);
+        for r in [&low, &unreadable, &garbled] {
+            assert_eq!(r.status, CheckStatus::Warn);
+        }
+        assert_eq!(low.message, "Low available memory: 0 MB of 0 MB");
+        assert_eq!(
+            unreadable.message,
+            "Memory info unavailable (/proc/meminfo)"
+        );
+        assert_eq!(garbled.message, "Could not parse /proc/meminfo");
+        assert_ne!(low.explain, unreadable.explain);
+        assert_ne!(unreadable.explain, garbled.explain);
+        assert_ne!(low.explain, garbled.explain);
     }
 
     #[test]
