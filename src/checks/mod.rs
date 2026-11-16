@@ -11,6 +11,23 @@ pub mod system;
 
 use crate::model::CheckResult;
 
+/// Every check ID, in report order.
+pub const CHECK_IDS: [&str; 13] = [
+    "kernel-version",
+    "root-disk-space",
+    "tmp-writable",
+    "memory-info",
+    "failed-system-services",
+    "failed-user-services",
+    "pacman-lock",
+    "pacman-log",
+    "orphan-packages",
+    "wayland-session",
+    "hyprland-socket",
+    "hyprland-binds",
+    "waybar-scripts",
+];
+
 pub fn run_system(results: &mut Vec<CheckResult>) {
     system::run(results);
 }
@@ -37,6 +54,12 @@ pub fn run_all(results: &mut Vec<CheckResult>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_ids_are_unique() {
+        let set: std::collections::BTreeSet<&str> = CHECK_IDS.iter().copied().collect();
+        assert_eq!(set.len(), 13);
+    }
 
     // Orchestration contract: all four groups run, contiguously, in
     // System -> Services -> Packages -> Desktop order. The fixed-shape groups
