@@ -336,11 +336,25 @@ mod tests {
         assert!(!c.enabled("pacman-log"));
         assert!(c.enabled("waybar-scripts") && c.enabled("kernel-version"));
         let mut r = vec![
-            CheckResult::new("waybar-scripts", "Desktop", CheckStatus::Fail, "m", ""),
-            CheckResult::new("hyprland-binds", "Desktop", CheckStatus::Warn, "m", ""),
+            CheckResult::problem(
+                "waybar-scripts",
+                "Desktop",
+                CheckStatus::Fail,
+                "m",
+                "",
+                "E.",
+            ),
+            CheckResult::problem(
+                "hyprland-binds",
+                "Desktop",
+                CheckStatus::Warn,
+                "m",
+                "",
+                "E.",
+            ),
             CheckResult::new("hyprland-binds", "Desktop", CheckStatus::Ok, "m", ""),
             CheckResult::new("waybar-scripts", "Desktop", CheckStatus::Skip, "m", ""),
-            CheckResult::new("tmp-writable", "System", CheckStatus::Fail, "m", ""),
+            CheckResult::problem("tmp-writable", "System", CheckStatus::Fail, "m", "", "E."),
         ];
         c.apply_overrides(&mut r);
         let s: Vec<_> = r.iter().map(|x| x.status).collect();
@@ -354,6 +368,21 @@ mod tests {
                 CheckStatus::Fail
             ]
         );
+    }
+
+    #[test]
+    fn overrides_keep_explanation() {
+        let c = Config::parse("[checks]\nwaybar-scripts = \"warn\"\n", P).unwrap();
+        let mut r = vec![CheckResult::problem(
+            "waybar-scripts",
+            "Desktop",
+            CheckStatus::Fail,
+            "m",
+            "",
+            "Because.",
+        )];
+        c.apply_overrides(&mut r);
+        assert_eq!((r[0].status, r[0].explain), (CheckStatus::Warn, "Because."));
     }
 
     #[test]

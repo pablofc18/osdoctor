@@ -64,19 +64,21 @@ pub fn sample_results() -> Vec<CheckResult> {
             "Hyprland socket detected",
             "",
         ),
-        CheckResult::new(
+        CheckResult::problem(
             "hyprland-binds",
             "Desktop",
             Warn,
             "Hyprland bind references missing command: ghostty",
             "",
+            "Explanation.",
         ),
-        CheckResult::new(
+        CheckResult::problem(
             "waybar-scripts",
             "Desktop",
             Fail,
             "Waybar config references missing script: ~/.config/waybar/scripts/battery",
             "",
+            "Explanation.",
         ),
     ]
 }

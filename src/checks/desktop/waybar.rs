@@ -182,12 +182,15 @@ pub fn check_scripts(results: &mut Vec<CheckResult>) {
         return;
     }
     for m in &missing {
-        results.push(CheckResult::new(
+        results.push(CheckResult::problem(
             "waybar-scripts",
             GROUP,
             CheckStatus::Fail,
             format!("Waybar config references missing script: {m}"),
             "",
+            "Your Waybar config runs a local script that does not exist, so the module using \
+it shows nothing or stops responding. Relative paths are resolved from the Waybar config \
+directory; check whether the script was moved, renamed or never copied there.",
         ));
     }
 }
@@ -293,6 +296,30 @@ mod tests {
         assert_eq!(checked, 3);
         assert_eq!(missing, vec!["${OSD_TEST_WAYBAR}/scripts/gone".to_string()]);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn missing_script_row_is_explained() {
+        let _g = crate::ENV_MUTEX.lock().unwrap();
+        let dir = unique_dir("waybar_explain");
+        std::fs::create_dir_all(dir.join("waybar")).unwrap();
+        std::fs::write(
+            dir.join("waybar/config.jsonc"),
+            r#"{ "custom/x": { "exec": "scripts/osd_gone" } }"#,
+        )
+        .unwrap();
+        let saved = std::env::var_os("XDG_CONFIG_HOME");
+        std::env::set_var("XDG_CONFIG_HOME", &dir);
+        let mut r = Vec::new();
+        check_scripts(&mut r);
+        match saved {
+            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].status, CheckStatus::Fail);
+        assert!(r[0].explain.contains("Waybar config"), "{}", r[0].explain);
     }
 
     #[test]

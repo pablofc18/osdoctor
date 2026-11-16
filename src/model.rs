@@ -48,9 +48,14 @@ pub struct CheckResult {
     pub status: CheckStatus,
     pub message: String,
     pub detail: String,
+    /// What a WARN/FAIL means, its likely cause and what to look at. Empty for
+    /// OK and SKIP rows. `'static` so it can never carry runtime data such as
+    /// unit names or paths read from the user's files.
+    pub explain: &'static str,
 }
 
 impl CheckResult {
+    /// An OK or SKIP row (no explanation). WARN/FAIL rows use [`Self::problem`].
     pub fn new(
         id: &'static str,
         group: &'static str,
@@ -58,12 +63,42 @@ impl CheckResult {
         message: impl Into<String>,
         detail: impl Into<String>,
     ) -> Self {
+        debug_assert!(
+            matches!(status, CheckStatus::Ok | CheckStatus::Skip),
+            "{id}: WARN/FAIL rows must use CheckResult::problem"
+        );
         CheckResult {
             id,
             group,
             status,
             message: message.into(),
             detail: detail.into(),
+            explain: "",
+        }
+    }
+
+    /// A WARN or FAIL row, which must carry a non-empty ASCII explanation.
+    pub fn problem(
+        id: &'static str,
+        group: &'static str,
+        status: CheckStatus,
+        message: impl Into<String>,
+        detail: impl Into<String>,
+        explain: &'static str,
+    ) -> Self {
+        debug_assert!(
+            matches!(status, CheckStatus::Warn | CheckStatus::Fail),
+            "{id}: OK/SKIP rows must use CheckResult::new"
+        );
+        debug_assert!(!explain.is_empty(), "{id}: empty explanation");
+        debug_assert!(explain.is_ascii(), "{id}: non-ASCII explanation");
+        CheckResult {
+            id,
+            group,
+            status,
+            message: message.into(),
+            detail: detail.into(),
+            explain,
         }
     }
 }
@@ -120,7 +155,48 @@ mod tests {
     use super::*;
 
     fn r(status: CheckStatus) -> CheckResult {
-        CheckResult::new("id", "G", status, "m", "")
+        match status {
+            CheckStatus::Ok | CheckStatus::Skip => CheckResult::new("id", "G", status, "m", ""),
+            _ => CheckResult::problem("id", "G", status, "m", "", "Because."),
+        }
+    }
+
+    #[test]
+    fn problem_carries_explanation() {
+        let r = CheckResult::problem("x", "G", CheckStatus::Warn, "m", "", "Because.");
+        assert_eq!(r.explain, "Because.");
+        assert_eq!(
+            CheckResult::new("x", "G", CheckStatus::Ok, "m", "").explain,
+            ""
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    #[cfg(debug_assertions)]
+    fn new_rejects_warn() {
+        CheckResult::new("x", "G", CheckStatus::Warn, "m", "");
+    }
+
+    #[test]
+    #[should_panic]
+    #[cfg(debug_assertions)]
+    fn problem_rejects_ok() {
+        CheckResult::problem("x", "G", CheckStatus::Ok, "m", "", "Because.");
+    }
+
+    #[test]
+    #[should_panic]
+    #[cfg(debug_assertions)]
+    fn problem_rejects_empty_explain() {
+        CheckResult::problem("x", "G", CheckStatus::Fail, "m", "", "");
+    }
+
+    #[test]
+    #[should_panic]
+    #[cfg(debug_assertions)]
+    fn problem_rejects_non_ascii() {
+        CheckResult::problem("x", "G", CheckStatus::Fail, "m", "", "Caf\u{e9}.");
     }
 
     #[test]

@@ -82,7 +82,7 @@ mod tests {
     fn plain_render_groups_and_summary() {
         let results = vec![
             CheckResult::new("k", "System", CheckStatus::Ok, "Kernel ok", "Linux x"),
-            CheckResult::new("w", "Desktop", CheckStatus::Warn, "missing thing", ""),
+            CheckResult::problem("w", "Desktop", CheckStatus::Warn, "missing thing", "", "E."),
         ];
         let expected = "System\n  ✓ Kernel ok\n      Linux x\n\nDesktop\n  ! missing thing\n\nSummary\n  Status: WARN\n  Checks: 1 ok, 1 warning, 0 failures\n";
         assert_eq!(render_text(&results, false), expected);

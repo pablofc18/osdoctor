@@ -80,7 +80,7 @@ mod tests {
     fn one_group_two_checks_with_detail() {
         let results = vec![
             CheckResult::new("a-id", "System", CheckStatus::Ok, "msg a", "det a"),
-            CheckResult::new("b-id", "System", CheckStatus::Warn, "msg b", ""),
+            CheckResult::problem("b-id", "System", CheckStatus::Warn, "msg b", "", "E."),
         ];
         let expected = "{\n  \"status\": \"warn\",\n  \"summary\": {\n    \"ok\": 1,\n    \"warn\": 1,\n    \"fail\": 0,\n    \"skip\": 0\n  },\n  \"groups\": [\n    {\n      \"name\": \"System\",\n      \"checks\": [\n        {\n          \"id\": \"a-id\",\n          \"status\": \"ok\",\n          \"message\": \"msg a\",\n          \"detail\": \"det a\"\n        },\n        {\n          \"id\": \"b-id\",\n          \"status\": \"warn\",\n          \"message\": \"msg b\"\n        }\n      ]\n    }\n  ]\n}\n";
         assert_eq!(render_json(&results), expected);

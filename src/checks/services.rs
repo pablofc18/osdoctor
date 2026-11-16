@@ -58,12 +58,24 @@ pub fn emit(results: &mut Vec<CheckResult>, scope: Scope, q: &Query) {
         }
         QueryStatus::Ok => {
             let plural = if q.count == 1 { "" } else { "s" };
-            results.push(CheckResult::new(
+            let explain = match scope {
+                Scope::System => {
+                    "One or more system services stopped with an error or failed to start. \
+systemctl --failed lists them; the status and journal of each unit show why it failed."
+                }
+                Scope::User => {
+                    "One or more services of your user session stopped with an error or failed \
+to start. systemctl --user --failed lists them; the status and user journal of each unit show \
+why it failed."
+                }
+            };
+            results.push(CheckResult::problem(
                 id,
                 GROUP,
                 CheckStatus::Warn,
                 format!("{} failed {noun} service{plural}", q.count),
                 q.detail.clone(),
+                explain,
             ));
         }
         QueryStatus::NoSession => {
@@ -236,6 +248,28 @@ mod tests {
             },
         );
         assert_eq!(last(&r).message, "1 failed user service");
+    }
+
+    #[test]
+    fn failed_units_are_explained_per_scope() {
+        let q = Query {
+            status: QueryStatus::Ok,
+            count: 1,
+            detail: "x.service".into(),
+        };
+        let mut r = Vec::new();
+        emit(&mut r, Scope::System, &q);
+        emit(&mut r, Scope::User, &q);
+        assert!(
+            r[0].explain.contains("systemctl --failed"),
+            "{}",
+            r[0].explain
+        );
+        assert!(
+            r[1].explain.contains("systemctl --user --failed"),
+            "{}",
+            r[1].explain
+        );
     }
 
     #[test]
