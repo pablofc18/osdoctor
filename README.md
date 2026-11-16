@@ -8,14 +8,13 @@ Omarchy-style setups. It inspects the system, the package manager, systemd
 services, and your desktop session, then prints a clean, grouped report (or
 JSON) with a meaningful exit code you can use in scripts.
 
-[![CI](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml/badge.svg?branch=rust)](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml?query=branch%3Arust)
+[![CI](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pablofc18/osdoctor/actions/workflows/ci.yml?query=branch%3Amain)
 ![Rust](https://img.shields.io/badge/Rust-2021-orange)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
-> **Two implementations.** This `rust` branch holds the Rust implementation;
-> the C implementation lives on [`main`](https://github.com/pablofc18/osdoctor/tree/main).
-> Both offer the same checks, flags, backends, and output, and both test their
-> renderers against the same [`examples/`](examples/) samples.
+> osdoctor was first written in C. The C implementation is no longer
+> maintained; its final state is preserved at the
+> [`c-final`](https://github.com/pablofc18/osdoctor/tree/c-final) tag.
 
 ---
 
